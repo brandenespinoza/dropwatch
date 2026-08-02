@@ -8,7 +8,7 @@ This document describes the product **as built**. Sections that were open
 questions in the original brief now record the decision that was made and why.
 Constraints marked as invariants still hold and must survive future changes.
 
-Status: complete and working. 443 automated tests, no runtime dependencies.
+Status: complete and working. 550 automated tests, no runtime dependencies.
 
 ## Core behavior
 

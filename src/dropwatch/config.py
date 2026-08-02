@@ -21,7 +21,7 @@ from .secrets import Secret, registry
 
 DEFAULT_TIMEOUT = 20.0
 DEFAULT_CACHE_MAX_AGE_HOURS = 24.0
-USER_AGENT = "dropwatch/2.0 (+local personal library tool)"
+USER_AGENT = "dropwatch/1.0 (+local personal library tool)"
 
 
 def invocation_name() -> str:
