@@ -126,11 +126,16 @@ dropwatch scan --limit 20 --type album
 dropwatch scan --favorites                 # only artists you have starred
 ```
 
-**Favourites** are read from Navidrome, not kept here — starring an artist in
-Navidrome is the whole of the setup. `--favorites` restricts one scan;
-`dropwatch config set favorites true` makes it the default, and
-`--all-artists` overrides that for a single run. An artist starred but not an
-album artist (starred via a single, say) has nothing to scan and is skipped.
+**Favourites** are read from Navidrome, not kept here — starring things in
+Navidrome is the whole of the setup. A favourite is any artist you have
+starred, *or* who made an album or song you have starred. Starring a
+collaboration favourites every contributor separately, so a starred Keith
+Urban / Michael McDonald duet counts for both.
+
+`--favorites` restricts one scan; `dropwatch config set favorites true` makes
+it the default, and `--all-artists` overrides that for a single run. A
+favourite with no album-artist entry — a guest on one starred track — has
+nothing to scan and is skipped; `-v` reports how many.
 
 | Flag | Effect |
 |---|---|

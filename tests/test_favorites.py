@@ -11,9 +11,20 @@ from dropwatch.navidrome import NavidromeClient
 from dropwatch.scan import ScanOptions, Scanner
 
 
-def starred(*artists) -> dict:
+def starred(artists=(), albums=(), songs=()) -> dict:
+    """A getStarred2 body. Albums and songs carry a structured `artists` list."""
+
+    def work(pairs):
+        return {"artists": [{"id": i, "name": n} for i, n in pairs]}
+
     return subsonic(
-        {"starred2": {"artist": [{"id": i, "name": n} for i, n in artists]}}
+        {
+            "starred2": {
+                "artist": [{"id": i, "name": n} for i, n in artists],
+                "album": [work(p) for p in albums],
+                "song": [work(p) for p in songs],
+            }
+        }
     )
 
 
@@ -41,30 +52,95 @@ def library(fake_http, *artists):
 
 
 class TestFavoritesFilter:
-    def test_only_starred_artists_are_scanned(self, scanner, fake_http):
+    def test_only_favourite_artists_are_scanned(self, scanner, fake_http):
         library(fake_http, ("1", "Kept"), ("2", "Dropped"), ("3", "Also Kept"))
-        fake_http.add("getStarred2.view", starred(("1", "Kept"), ("3", "Also Kept")))
+        fake_http.add(
+            "getStarred2.view", starred(artists=[("1", "Kept"), ("3", "Also Kept")])
+        )
         names = [a.name for a in scanner.read_library(ScanOptions(favorites=True))]
         assert names == ["Also Kept", "Kept"]
 
+    def test_a_starred_album_favourites_its_artist(self, scanner, fake_http):
+        """Starring an album does not star the artist in Navidrome, but it
+        does say the artist matters."""
+        library(fake_http, ("1", "Wheeland Brothers"), ("2", "Nobody"))
+        fake_http.add(
+            "getStarred2.view", starred(albums=[[("1", "Wheeland Brothers")]])
+        )
+        names = [a.name for a in scanner.read_library(ScanOptions(favorites=True))]
+        assert names == ["Wheeland Brothers"]
+
+    def test_a_starred_song_favourites_its_artist(self, scanner, fake_http):
+        library(fake_http, ("1", "Sublime"), ("2", "Nobody"))
+        fake_http.add("getStarred2.view", starred(songs=[[("1", "Sublime")]]))
+        names = [a.name for a in scanner.read_library(ScanOptions(favorites=True))]
+        assert names == ["Sublime"]
+
+    def test_a_collaboration_favourites_every_contributor(self, scanner, fake_http):
+        """The display name joins them with a bullet — "Keith Urban • Michael
+        McDonald" — which is nobody. The structured list has both."""
+        library(fake_http, ("1", "Keith Urban"), ("2", "Michael McDonald"), ("3", "No"))
+        fake_http.add(
+            "getStarred2.view",
+            starred(songs=[[("1", "Keith Urban"), ("2", "Michael McDonald")]]),
+        )
+        names = [a.name for a in scanner.read_library(ScanOptions(favorites=True))]
+        assert names == ["Keith Urban", "Michael McDonald"]
+
+    def test_the_display_name_is_never_treated_as_an_artist(self, scanner, fake_http):
+        library(fake_http, ("1", "Keith Urban"))
+        fake_http.add(
+            "getStarred2.view",
+            starred(songs=[[("1", "Keith Urban"), ("2", "Michael McDonald")]]),
+        )
+        favourites = scanner.client.get_favorite_artists()
+        assert all("\u2022" not in a.name for a in favourites)
+
+    def test_an_older_server_without_the_structured_list(self, scanner, fake_http):
+        body = subsonic(
+            {
+                "starred2": {
+                    "song": [{"artistId": "1", "artist": "Sublime"}],
+                    "album": [{"artistId": "2", "artist": "Oasis"}],
+                }
+            }
+        )
+        library(fake_http, ("1", "Sublime"), ("2", "Oasis"), ("3", "No"))
+        fake_http.add("getStarred2.view", body)
+        names = [a.name for a in scanner.read_library(ScanOptions(favorites=True))]
+        assert names == ["Oasis", "Sublime"]
+
+    def test_one_artist_starred_several_ways_counts_once(self, scanner, fake_http):
+        library(fake_http, ("1", "Sublime"))
+        fake_http.add(
+            "getStarred2.view",
+            starred(
+                artists=[("1", "Sublime")],
+                albums=[[("1", "Sublime")]],
+                songs=[[("1", "Sublime")]],
+            ),
+        )
+        assert len(scanner.client.get_favorite_artists()) == 1
+
     def test_off_by_default(self, scanner, fake_http):
         library(fake_http, ("1", "Kept"), ("2", "Dropped"))
-        fake_http.add("getStarred2.view", starred(("1", "Kept")))
+        fake_http.add("getStarred2.view", starred(artists=[("1", "Kept")]))
         assert len(scanner.read_library(ScanOptions())) == 2
 
     def test_matched_by_name_when_ids_differ(self, scanner, fake_http):
         # Navidrome can report a different id for the same artist across
         # endpoints; the name is the fallback so a favourite is not lost.
         library(fake_http, ("album-artist-1", "Ghost"))
-        fake_http.add("getStarred2.view", starred(("starred-9", "ghost")))
+        fake_http.add("getStarred2.view", starred(artists=[("starred-9", "ghost")]))
         names = [a.name for a in scanner.read_library(ScanOptions(favorites=True))]
         assert names == ["Ghost"]
 
-    def test_a_starred_non_album_artist_is_skipped(self, scanner, fake_http):
-        """Starring a single stars an artist with no albums to scan."""
+    def test_a_favourite_that_is_not_an_album_artist_is_skipped(self, scanner, fake_http):
+        """A guest on one starred track has no album-artist entry to scan."""
         library(fake_http, ("1", "Has Albums"))
         fake_http.add(
-            "getStarred2.view", starred(("1", "Has Albums"), ("99", "Singles Only"))
+            "getStarred2.view",
+            starred(songs=[[("1", "Has Albums"), ("99", "Guest Only")]]),
         )
         names = [a.name for a in scanner.read_library(ScanOptions(favorites=True))]
         assert names == ["Has Albums"]
@@ -72,12 +148,12 @@ class TestFavoritesFilter:
     def test_no_starred_artists_is_an_explained_error(self, scanner, fake_http):
         library(fake_http, ("1", "Anyone"))
         fake_http.add("getStarred2.view", subsonic({"starred2": {}}))
-        with pytest.raises(ConfigError, match="No starred artists"):
+        with pytest.raises(ConfigError, match="Nothing is starred"):
             scanner.read_library(ScanOptions(favorites=True))
 
     def test_combines_with_an_artist_filter(self, scanner, fake_http):
         library(fake_http, ("1", "A"), ("2", "B"))
-        fake_http.add("getStarred2.view", starred(("1", "A"), ("2", "B")))
+        fake_http.add("getStarred2.view", starred(artists=[("1", "A"), ("2", "B")]))
         options = ScanOptions(favorites=True, artist_filters=["B"])
         assert [a.name for a in scanner.read_library(options)] == ["B"]
 

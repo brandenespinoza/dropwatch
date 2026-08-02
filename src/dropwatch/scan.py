@@ -225,19 +225,19 @@ class Scanner:
         return artists
 
     def _only_favorites(self, artists: list[LocalArtist]) -> list[LocalArtist]:
-        """Keep the album artists you have starred in Navidrome.
+        """Keep the album artists among your Navidrome favourites.
 
-        Matched on id, falling back to a folded name: an artist can be starred
-        without being an *album* artist — starred via a single, say — and those
-        have nothing here to scan.
+        Matched on id, falling back to a folded name. A favourite can have no
+        album-artist entry at all — a guest on one starred track, say — and
+        those have nothing here to scan.
         """
-        starred = self.client.get_starred_artists()
+        starred = self.client.get_favorite_artists()
         if not starred:
             raise ConfigError(
-                "No starred artists in Navidrome.",
+                "Nothing is starred in Navidrome.",
                 hint=(
-                    "Favourite some artists in Navidrome, or drop --favorites "
-                    "to scan the whole library."
+                    "Favourite an artist, album or song in Navidrome, or drop "
+                    "--favorites to scan the whole library."
                 ),
             )
 
@@ -248,10 +248,10 @@ class Scanner:
         skipped = len(starred) - len(kept)
         if skipped > 0:
             log.info(
-                "%d starred artist(s) are not album artists and have nothing to scan",
+                "%d favourite(s) are not album artists and have nothing to scan",
                 skipped,
             )
-        log.info("Scanning %d of %d starred artists", len(kept), len(starred))
+        log.info("Scanning %d of %d favourite artists", len(kept), len(starred))
         return kept
 
     def load_local_tracks(self, artist: LocalArtist) -> int:

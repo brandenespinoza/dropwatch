@@ -141,10 +141,18 @@ Scan flags: `--artist NAME` (repeatable), `--limit N`, `--since YEAR`,
 `--type TYPE` (repeatable), `--favorites` / `--all-artists`, `--flat`,
 `--refresh`, `--no-progress`.
 
-`--favorites` restricts the scan to artists starred in Navidrome, read from
-`getStarred2`. The library already records which artists matter, so the tool
-does not ask for a second copy of that list. Persisted as the `favorites`
-setting; `--all-artists` overrides it for one run.
+`--favorites` restricts the scan to Navidrome favourites, read from
+`getStarred2`: artists you have starred, plus the artists of albums and songs
+you have starred. The library already records what matters to you, so the tool
+does not ask for a second copy of that list.
+
+Contributors come from each entry's structured `artists` array rather than its
+display name, which joins collaborators with a bullet — "Keith Urban • Michael
+McDonald" — and names no real artist. A starred collaboration therefore
+favourites every contributor. Servers that omit the array fall back to the flat
+`artistId`/`artist` pair.
+
+Persisted as the `favorites` setting; `--all-artists` overrides it for one run.
 
 `--since` accepts `YYYY`, `YYYY-MM` or `YYYY-MM-DD`. Comparison stops at
 whichever side is less precise, so a release dated only `2024` is not excluded

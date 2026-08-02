@@ -158,28 +158,55 @@ class NavidromeClient:
         log.info("Navidrome reports %d album artists", len(artists))
         return artists
 
-    def get_starred_artists(self) -> list[LocalArtist]:
-        """Artists you have favourited in Navidrome.
+    def get_favorite_artists(self) -> list[LocalArtist]:
+        """Artists you have starred, or who made something you have starred.
 
-        Read rather than asked for: the library already records which artists
-        matter to you, so a "favourites only" scan should use that list rather
-        than ask you to maintain a second copy of it.
+        Read rather than asked for: the library already records what matters to
+        you, so a "favourites only" scan uses that rather than asking you to
+        maintain a second copy of it.
 
-        Starring an album or a song does not star its artist, so this is only
-        the artists themselves.
+        Starring an album or a song does not star its artist in Navidrome, but
+        it does say the artist matters, so all three kinds contribute.
+
+        Contributors come from the structured `artists` array, not the display
+        name: that joins collaborators with a bullet — "Keith Urban • Michael
+        McDonald" — which is nobody's artist. The array splits them into real
+        entries with their own ids, so starring one collaboration favourites
+        both artists.
         """
         body = self._call("getStarred2.view")
         container = body.get("starred2") or {}
-        artists = [
-            LocalArtist(
-                id=str(entry.get("id", "")),
-                name=entry.get("name", "") or "",
-                album_count=int(entry.get("albumCount") or 0),
-            )
-            for entry in (container.get("artist") or [])
-        ]
-        log.info("Navidrome reports %d starred artists", len(artists))
-        return artists
+
+        found: dict[str, LocalArtist] = {}
+        counts: dict[str, int] = {}
+
+        def remember(kind: str, artist_id: str, name: str) -> None:
+            artist_id, name = str(artist_id or ""), (name or "").strip()
+            if not artist_id and not name:
+                return
+            key = artist_id or name.casefold()
+            if key not in found:
+                found[key] = LocalArtist(id=artist_id, name=name)
+                counts[kind] = counts.get(kind, 0) + 1
+
+        for entry in container.get("artist") or []:
+            remember("artist", entry.get("id"), entry.get("name"))
+
+        for kind in ("album", "song"):
+            for entry in container.get(kind) or []:
+                contributors = entry.get("artists") or []
+                if contributors:
+                    for who in contributors:
+                        remember(kind, who.get("id"), who.get("name"))
+                else:  # older servers send only the flat pair
+                    remember(kind, entry.get("artistId"), entry.get("artist"))
+
+        log.info(
+            "Navidrome favourites: %d artist(s) — %s",
+            len(found),
+            ", ".join(f"{n} via starred {k}s" for k, n in sorted(counts.items())) or "none",
+        )
+        return list(found.values())
 
     def get_artist_albums(self, artist_id: str) -> list[LocalAlbum]:
         body = self._call("getArtist.view", {"id": artist_id})
