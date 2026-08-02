@@ -75,13 +75,16 @@ history and in `ps` output. Use `config password`.
 
 Precedence, highest first:
 
-1. A real environment variable
-2. `--env-file <path>`, or `$DROPWATCH_ENV`
-3. `./.env` in the current directory
-4. `~/.config/dropwatch/.env`
+1. A real environment variable (`NAVIDROME_URL`, etc.)
+2. The settings file — `~/.config/dropwatch/.env`, or `$DROPWATCH_ENV` if set
 
-A value set in your shell environment silently overrides the file. `config` will
-tell you when that's happening.
+A value set in your shell environment silently overrides the file. `config`
+tells you when that's happening.
+
+There is no `--env-file` flag and no `./.env` in the working directory. Both
+were ways to change settings without going through `config`, and a stray `.env`
+in whatever directory you happened to be standing in could quietly decide which
+server got scanned.
 
 ### `check`
 
@@ -320,7 +323,6 @@ Accepted before or after the subcommand.
 | Flag | Effect |
 |---|---|
 | `-v`, `-vv` | Verbose to stderr; twice for debug logging. |
-| `--env-file PATH` | Read and write settings at this path. |
 | `--version` | Print the version and exit. |
 | `-h`, `--help` | Help. Works per-subcommand: `dropwatch scan --help`. |
 
@@ -335,8 +337,9 @@ Accepted before or after the subcommand.
 | `~/.local/share/dropwatch/` | The installed virtualenv. |
 | `~/.local/bin/dropwatch` | The symlink on your `PATH`. |
 
-Overrides for testing: `DROPWATCH_CONFIG_DIR`, `DROPWATCH_STATE_DIR`,
-`DROPWATCH_ENV`.
+`$DROPWATCH_ENV` moves the settings file; `$DROPWATCH_CONFIG_DIR` and
+`$DROPWATCH_STATE_DIR` move the directories above (used by the test suite to
+keep it out of your real ones).
 
 Deleting the state file loses your mappings and review decisions. Deleting the
 `.env` loses your credentials. Nothing else is written anywhere.

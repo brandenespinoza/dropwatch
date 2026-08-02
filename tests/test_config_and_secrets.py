@@ -170,14 +170,18 @@ class TestLoadConfig:
         return path
 
     def test_loads_from_env_file(self, tmp_path):
-        config = load_config(env_file=self._env_file(tmp_path), environ={})
+        path = self._env_file(tmp_path)
+        config = load_config(environ={"DROPWATCH_ENV": str(path)})
         assert config.navidrome_url == "http://example:4533"
         assert config.navidrome_password.reveal() == PASSWORD
 
     def test_real_environment_wins_over_file(self, tmp_path):
+        path = self._env_file(tmp_path)
         config = load_config(
-            env_file=self._env_file(tmp_path),
-            environ={"NAVIDROME_URL": "http://other:9000"},
+            environ={
+                "DROPWATCH_ENV": str(path),
+                "NAVIDROME_URL": "http://other:9000",
+            },
         )
         assert config.navidrome_url == "http://other:9000"
 
@@ -185,12 +189,16 @@ class TestLoadConfig:
         path = tmp_path / ".env"
         path.write_text("NAVIDROME_URL=http://example:4533\n")
         with pytest.raises(ConfigError, match="NAVIDROME_USERNAME"):
-            load_config(env_file=path, environ={})
+            load_config(environ={"DROPWATCH_ENV": str(path)})
 
     def test_invalid_timeout_is_rejected(self, tmp_path):
         with pytest.raises(ConfigError, match="REQUEST_TIMEOUT_SECONDS"):
             load_config(
-                env_file=self._env_file(tmp_path, REQUEST_TIMEOUT_SECONDS="-3"), environ={}
+                environ={
+                    "DROPWATCH_ENV": str(
+                        self._env_file(tmp_path, REQUEST_TIMEOUT_SECONDS="-3")
+                    )
+                }
             )
 
     def test_dotenv_parsing_handles_quotes_comments_and_export(self, tmp_path):
@@ -234,12 +242,20 @@ class TestEnvFileDiscovery:
         )
         return path
 
-    def test_search_order_is_cwd_then_user_config(self, tmp_path, monkeypatch):
-        from dropwatch.config import candidate_env_paths
+    def test_there_is_one_settings_path(self, tmp_path, monkeypatch):
+        from dropwatch.config import settings_path
 
         monkeypatch.chdir(tmp_path)
-        paths = candidate_env_paths(environ={"DROPWATCH_CONFIG_DIR": "/cfg"})
-        assert paths == [tmp_path / ".env", Path("/cfg/.env")]
+        assert settings_path(environ={"DROPWATCH_CONFIG_DIR": "/cfg"}) == Path(
+            "/cfg/.env"
+        )
+
+    def test_dropwatch_env_moves_it(self, tmp_path):
+        from dropwatch.config import settings_path
+
+        assert settings_path(
+            environ={"DROPWATCH_ENV": "/elsewhere/other.env", "DROPWATCH_CONFIG_DIR": "/cfg"}
+        ) == Path("/elsewhere/other.env")
 
     def test_falls_back_to_the_user_config_directory(self, tmp_path, monkeypatch):
         # The scenario that matters: installed command, run from elsewhere.
@@ -251,19 +267,20 @@ class TestEnvFileDiscovery:
         config = load_config(environ={"DROPWATCH_CONFIG_DIR": str(cfg)})
         assert config.navidrome_url == "http://example:4533"
 
-    def test_local_env_wins_over_user_config(self, tmp_path, monkeypatch):
+    def test_a_dot_env_in_the_working_directory_is_ignored(self, tmp_path, monkeypatch):
+        """.env files litter project directories. One must not decide which
+        server gets scanned just because you happened to `cd` there."""
         cfg = tmp_path / "cfg"
-        self._write(cfg / ".env", "http://from-config-dir:1")
-        workdir = tmp_path / "project"
-        self._write(workdir / ".env", "http://from-cwd:2")
+        self._write(cfg / ".env", "http://mine:1")
+        workdir = tmp_path / "some-unrelated-project"
+        self._write(workdir / ".env", "http://not-mine:2")
         monkeypatch.chdir(workdir)
         config = load_config(environ={"DROPWATCH_CONFIG_DIR": str(cfg)})
-        assert config.navidrome_url == "http://from-cwd:2"
+        assert config.navidrome_url == "http://mine:1"
 
     def test_dropwatch_env_override_wins(self, tmp_path, monkeypatch):
-        self._write(tmp_path / "project" / ".env", "http://from-cwd:2")
+        self._write(tmp_path / "cfg" / ".env", "http://mine:1")
         explicit = self._write(tmp_path / "custom.env", "http://from-override:3")
-        monkeypatch.chdir(tmp_path / "project")
         config = load_config(
             environ={
                 "DROPWATCH_ENV": str(explicit),
@@ -272,19 +289,26 @@ class TestEnvFileDiscovery:
         )
         assert config.navidrome_url == "http://from-override:3"
 
-    def test_missing_config_lists_where_it_looked(self, tmp_path, monkeypatch):
+    def test_a_dropwatch_env_pointing_nowhere_says_so(self, tmp_path):
+        # A typo in the variable is a different problem from having no config,
+        # and reporting it as the latter sends you to `setup` for no reason.
+        with pytest.raises(ConfigError, match="No such configuration file"):
+            load_config(environ={"DROPWATCH_ENV": str(tmp_path / "typo.env")})
+
+    def test_missing_config_names_the_one_place_it_looked(self, tmp_path, monkeypatch):
         monkeypatch.setattr(sys, "argv", ["/usr/local/bin/dropwatch"])
         monkeypatch.chdir(tmp_path)
         with pytest.raises(ConfigError) as excinfo:
             load_config(environ={"DROPWATCH_CONFIG_DIR": str(tmp_path / "cfg")})
         hint = excinfo.value.hint or ""
         assert "dropwatch setup" in hint
-        assert str(tmp_path / ".env") in hint
         assert str(tmp_path / "cfg" / ".env") in hint
+        # The working directory is not a source, so naming it would mislead.
+        assert str(tmp_path / ".env") not in hint
 
     def test_explicit_missing_file_is_an_error_not_a_silent_fallback(self, tmp_path):
         with pytest.raises(ConfigError, match="No such configuration file"):
-            load_config(env_file=tmp_path / "nope.env", environ={})
+            load_config(environ={"DROPWATCH_ENV": str(tmp_path / "nope.env")})
 
     def test_environment_alone_needs_no_file(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)

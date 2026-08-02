@@ -78,27 +78,27 @@ class TestProvenance:
     def test_environment_beats_file(self, tmp_path):
         path = tmp_path / ".env"
         save_settings(path, {"NAVIDROME_URL": "http://from-file:1"})
-        rows = {r.setting.key: r for r in describe_settings(path, {"NAVIDROME_URL": "http://from-env:2"})}
+        rows = {r.setting.key: r for r in describe_settings({"DROPWATCH_ENV": str(path), "NAVIDROME_URL": "http://from-env:2"})}
         assert rows["url"].value == "http://from-env:2"
         assert rows["url"].source == "environment"
 
     def test_file_is_reported_by_path(self, tmp_path):
         path = tmp_path / ".env"
         save_settings(path, {"NAVIDROME_URL": "http://example:4533"})
-        rows = {r.setting.key: r for r in describe_settings(path, {})}
+        rows = {r.setting.key: r for r in describe_settings({"DROPWATCH_ENV": str(path)})}
         assert rows["url"].source == str(path)
 
     def test_unset_optional_falls_back_to_default(self, tmp_path):
         path = tmp_path / ".env"
         save_settings(path, {"NAVIDROME_URL": "http://example:4533"})
-        rows = {r.setting.key: r for r in describe_settings(path, {})}
+        rows = {r.setting.key: r for r in describe_settings({"DROPWATCH_ENV": str(path)})}
         assert rows["timeout"].value == "20"
         assert rows["timeout"].source == "default"
 
     def test_password_is_masked_in_display(self, tmp_path):
         path = tmp_path / ".env"
         save_settings(path, {"NAVIDROME_PASSWORD": "hunter2-not-real"})
-        rows = {r.setting.key: r for r in describe_settings(path, {})}
+        rows = {r.setting.key: r for r in describe_settings({"DROPWATCH_ENV": str(path)})}
         assert rows["password"].display == "********"
         assert "hunter2-not-real" not in rows["password"].display
 
@@ -208,8 +208,9 @@ class TestHintsNameRealCommands:
         assert "setup" in hint
         assert "init" not in hint, "`init` was replaced by `setup`"
 
-    def test_missing_env_file_hint_points_at_setup(self, cfg, capsys, tmp_path):
-        assert main(["check", "--env-file", str(tmp_path / "nope.env")]) == ExitCode.CONFIG
+    def test_missing_env_file_hint_points_at_setup(self, cfg, capsys, tmp_path, monkeypatch):
+        monkeypatch.setenv("DROPWATCH_ENV", str(tmp_path / "nope.env"))
+        assert main(["check"]) == ExitCode.CONFIG
         hint = capsys.readouterr().err
         assert "setup" in hint
         assert "init" not in hint

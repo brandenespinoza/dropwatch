@@ -161,11 +161,14 @@ as it would in your browser; this tool never configures networking itself.
 Settings are read from the first source that has them:
 
 1. Real environment variables
-2. `--env-file PATH`, or `$DROPWATCH_ENV`
-3. `./.env` in the current directory
-4. `~/.config/dropwatch/.env`
+2. The settings file — `~/.config/dropwatch/.env`, or `$DROPWATCH_ENV` if set
 
-When nothing is found, the error lists every location it searched. Environment
+That is the whole chain. Settings are managed with `setup` and `config`, so
+there is no `--env-file` flag and no `./.env` in the working directory to go
+around them — a stray `.env` in a project directory should not be able to
+decide which server gets scanned.
+
+When nothing is found, the error names the file it expected. Environment
 variables win over the file, and both `setup` and `config set` warn you when one
 is shadowing what you just saved.
 

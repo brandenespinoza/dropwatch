@@ -19,7 +19,7 @@ from .config import (
     invocation_name,
     normalize_url,
     save_settings,
-    user_config_dir,
+    settings_path,
 )
 from .errors import (
     ConfigError,
@@ -84,7 +84,7 @@ def _test_connection(url: str, username: str, password: str, timeout: float) -> 
     return client.ping()
 
 
-def run_setup(env_file: Path | None = None, environ: dict[str, str] | None = None) -> int:
+def run_setup(environ: dict[str, str] | None = None) -> int:
     """Guided setup. Returns a process exit code."""
     from .errors import ExitCode
 
@@ -98,8 +98,8 @@ def run_setup(env_file: Path | None = None, environ: dict[str, str] | None = Non
             ),
         )
 
-    target = Path(env_file).expanduser() if env_file else user_config_dir() / ".env"
-    resolved = {r.setting.key: r for r in describe_settings(env_file, environ)}
+    target = settings_path(environ)
+    resolved = {r.setting.key: r for r in describe_settings(environ)}
     reconfiguring = target.is_file()
 
     print(f"Configuring dropwatch\n  Settings file: {target}")

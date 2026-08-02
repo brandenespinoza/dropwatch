@@ -151,11 +151,10 @@ Navidrome track fetching is threaded at a fixed width, and the dominant cost —
 Deezer — is rate-limited and necessarily serial, so a worker knob would promise
 a speed-up the architecture cannot deliver.
 
-Global flags, accepted before or after the subcommand: `-v` / `-vv`,
-`--env-file PATH`.
+The only global flag, accepted before or after the subcommand, is `-v` / `-vv`.
 
-The command hierarchy is deliberately shallow. A normal run needs no arguments
-and is never interactive.
+The command hierarchy is deliberately shallow, and a scan is never
+interactive.
 
 ## Installation
 
@@ -182,14 +181,18 @@ relative to the current directory.
 Settings are read from the first source that supplies them:
 
 1. Real environment variables
-2. `--env-file PATH`, or `$DROPWATCH_ENV`
-3. `./.env` in the current working directory
-4. `~/.config/dropwatch/.env` (override with `$DROPWATCH_CONFIG_DIR`)
+2. `~/.config/dropwatch/.env`, relocatable with `$DROPWATCH_ENV`
+   (or `$DROPWATCH_CONFIG_DIR` for the directory)
 
-A checkout with its own `.env` keeps working while the installed command finds
-user-level configuration from anywhere. When nothing is found, the error lists
-every location searched. An explicitly named `--env-file` that does not exist is
-an error rather than a silent fallback.
+Two further sources were removed: a `--env-file` flag, which duplicated
+`$DROPWATCH_ENV` exactly while appearing in every subcommand's help, and a
+`./.env` in the working directory, which let an unrelated project file decide
+which server was scanned. Settings are managed through `setup` and `config`; a
+path that bypasses them is a liability rather than a convenience.
+
+When nothing is found, the error names the file it expected. A `$DROPWATCH_ENV`
+pointing at a file that does not exist is an error rather than a silent
+fallback, since that is a typo and not an absent configuration.
 
 Settings are managed through commands rather than by hand-editing, though the
 file stays a plain `.env` that can be edited directly.

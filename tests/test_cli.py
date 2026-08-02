@@ -49,7 +49,7 @@ class TestMisplacedScanFlags:
         [
             ["scan", "--since", "2025"],   # correct placement
             ["-v", "status"],
-            ["--env-file", "x.env", "check"],
+            ["-v", "scan", "--since", "2025"],
             ["status", "--decided"],
             [],
             ["--version"],
@@ -64,11 +64,12 @@ class TestMisplacedScanFlags:
         assert "--since" in err
         assert "scan --since 2025" in err
 
-    def test_env_file_value_is_not_mistaken_for_a_subcommand(self):
-        # "--env-file check.env" must not read "check.env" as ending the
-        # top-level region early. It is a value, not a subcommand.
-        assert _misplaced_scan_flags(["--env-file", "check.env", "--since", "2025"]) == [
-            "--since"
+    def test_a_flag_value_is_not_mistaken_for_a_subcommand(self):
+        # An artist literally named "check" is a value, not the `check`
+        # subcommand, so it must not end the scan early and hide --since.
+        assert _misplaced_scan_flags(["--artist", "check", "--since", "2025"]) == [
+            "--artist",
+            "--since",
         ]
 
 
@@ -127,7 +128,8 @@ class TestExitCodes:
         monkeypatch.chdir(tmp_path)
         for key in ("NAVIDROME_URL", "NAVIDROME_USERNAME", "NAVIDROME_PASSWORD"):
             monkeypatch.delenv(key, raising=False)
-        assert main(["check", "--env-file", str(env)]) == ExitCode.CONFIG
+        monkeypatch.setenv("DROPWATCH_ENV", str(env))
+        assert main(["check"]) == ExitCode.CONFIG
         assert "http or https" in capsys.readouterr().err
 
 
@@ -142,7 +144,8 @@ class TestStateCommands:
         )
         for key in ("NAVIDROME_URL", "NAVIDROME_USERNAME", "NAVIDROME_PASSWORD", "CACHE_PATH"):
             monkeypatch.delenv(key, raising=False)
-        return ["--env-file", str(env)]
+        monkeypatch.setenv("DROPWATCH_ENV", str(env))
+        return []
 
     def test_block_and_unmap_roundtrip(self, tmp_path, monkeypatch, capsys):
         env = self._env(tmp_path, monkeypatch)

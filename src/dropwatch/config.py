@@ -53,31 +53,26 @@ def user_config_dir(environ: dict[str, str] | None = None) -> Path:
     return Path.home() / ".config" / "dropwatch"
 
 
-def candidate_env_paths(
-    explicit: Path | None = None, environ: dict[str, str] | None = None
-) -> list[Path]:
-    """Where a .env may live, most specific first.
+def settings_path(environ: dict[str, str] | None = None) -> Path:
+    """The one file settings are read from and written to.
 
-    The working directory is searched before the user config directory so that
-    running inside a checkout still picks up a local .env, while an installed
-    command run from anywhere falls back to ~/.config/dropwatch/.env.
+    `$DROPWATCH_ENV` moves it, which is the whole of the override story: there
+    was also a `--env-file` flag doing exactly this on every subcommand, and a
+    `./.env` in the working directory. Both are gone. `.env` files are common
+    in project directories, and one silently deciding which server gets scanned
+    is not a trade worth making for the convenience.
     """
     environ = os.environ if environ is None else environ
-    if explicit is not None:
-        return [Path(explicit).expanduser()]
     override = environ.get("DROPWATCH_ENV")
     if override:
-        return [Path(override).expanduser()]
-    return [Path.cwd() / ".env", user_config_dir(environ) / ".env"]
+        return Path(override).expanduser()
+    return user_config_dir(environ) / ".env"
 
 
-def find_env_file(
-    explicit: Path | None = None, environ: dict[str, str] | None = None
-) -> Path | None:
-    for path in candidate_env_paths(explicit, environ):
-        if path.is_file():
-            return path
-    return None
+def find_env_file(environ: dict[str, str] | None = None) -> Path | None:
+    """The settings file, or None when it does not exist yet."""
+    path = settings_path(environ)
+    return path if path.is_file() else None
 
 
 @dataclass(frozen=True)
@@ -131,16 +126,14 @@ class ResolvedSetting:
         return "********" if self.setting.secret else self.value
 
 
-def describe_settings(
-    env_file: Path | None = None, environ: dict[str, str] | None = None
-) -> list[ResolvedSetting]:
+def describe_settings(environ: dict[str, str] | None = None) -> list[ResolvedSetting]:
     """Effective value and provenance for every setting.
 
-    Exists so `config` can answer "why isn't my change taking effect",
-    which is the obvious failure mode of a four-level precedence chain.
+    Exists so `config` can answer "why isn't my change taking effect", which a
+    shell variable shadowing the file still makes possible.
     """
     environ = os.environ if environ is None else environ
-    env_path = find_env_file(env_file, environ)
+    env_path = find_env_file(environ)
     file_values = load_dotenv(env_path) if env_path else {}
 
     resolved: list[ResolvedSetting] = []
@@ -367,12 +360,11 @@ def normalize_url(raw: str) -> str:
 
 
 def load_config(
-    env_file: Path | None = None,
     environ: dict[str, str] | None = None,
     warn_stream=sys.stderr,
     require_navidrome: bool = True,
 ) -> Config:
-    """Build a validated Config from the environment and an optional .env.
+    """Build a validated Config from the environment and the settings file.
 
     Commands that only read the local state file — listing mappings, recording
     a block, inspecting the cache — pass ``require_navidrome=False``. They
@@ -383,17 +375,20 @@ def load_config(
     """
     environ = dict(os.environ if environ is None else environ)
 
-    if env_file is not None and not Path(env_file).expanduser().is_file():
+    expected = settings_path(environ)
+    env_path = find_env_file(environ)
+
+    # A DROPWATCH_ENV pointing nowhere is a typo, not an absent config, and
+    # saying so beats listing the path as somewhere we merely looked.
+    if env_path is None and environ.get("DROPWATCH_ENV"):
         raise ConfigError(
-            f"No such configuration file: {env_file}",
+            f"No such configuration file: {expected}",
             hint=(
-                "Check the --env-file path, or run "
-                f"`{invocation_name()} setup` to configure it."
+                "$DROPWATCH_ENV points there. Unset it to use "
+                f"{user_config_dir(environ) / '.env'}, or run "
+                f"`{invocation_name()} setup`."
             ),
         )
-
-    searched = candidate_env_paths(env_file, environ)
-    env_path = find_env_file(env_file, environ)
 
     file_values = load_dotenv(env_path) if env_path else {}
     if file_values:
@@ -408,12 +403,12 @@ def load_config(
 
     if env_path is None and not get("NAVIDROME_URL"):
         if require_navidrome:
-            locations = "\n    ".join(str(p) for p in searched)
             raise ConfigError(
                 "No configuration found.",
                 hint=(
-                    f"Run `{invocation_name()} setup` to configure it, or set NAVIDROME_URL in the "
-                    f"environment.\n  Looked in:\n    {locations}"
+                    f"Run `{invocation_name()} setup` to configure it, or set "
+                    f"NAVIDROME_URL in the environment.\n"
+                    f"  Expected a settings file at: {expected}"
                 ),
             )
 

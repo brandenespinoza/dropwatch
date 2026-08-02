@@ -25,13 +25,12 @@ from .config import (
     USER_AGENT,
     Config,
     describe_settings,
-    find_env_file,
     invocation_name,
     load_config,
     load_dotenv,
     normalize_url,
     save_settings,
-    user_config_dir,
+    settings_path,
 )
 from .deezer import DeezerProvider, make_rate_limiter
 from .errors import ExitCode, DropWatchError
@@ -86,12 +85,6 @@ def _global_options() -> argparse.ArgumentParser:
         default=argparse.SUPPRESS,
         help="verbose output to stderr; repeat for debug logging",
     )
-    common.add_argument(
-        "--env-file",
-        type=Path,
-        default=argparse.SUPPRESS,
-        help="path to the config file (default: ./.env, then ~/.config/dropwatch/.env)",
-    )
     return common
 
 
@@ -105,8 +98,8 @@ def build_parser() -> argparse.ArgumentParser:
             "and you appear not to own."
         ),
         epilog=(
-            "Start with `dropwatch setup`, then `dropwatch scan`. Configuration is "
-            "read from the environment, then ./.env, then ~/.config/dropwatch/.env."
+            "Start with `dropwatch setup`, then `dropwatch scan`. Settings live in "
+            "~/.config/dropwatch/.env; see `dropwatch config`."
         ),
     )
     parser.add_argument("--version", action="version", version=f"dropwatch {__version__}")
@@ -310,7 +303,7 @@ SCAN_FLAGS = {
 }
 
 #: Flags that consume the next token, so it is a value rather than a subcommand.
-VALUE_FLAGS = {"--env-file", "--artist", "--limit", "--since", "--type"}
+VALUE_FLAGS = {"--artist", "--limit", "--since", "--type"}
 
 
 def _apply_aliases(argv: list[str]) -> list[str]:
@@ -394,7 +387,6 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(_apply_aliases(argv))
     # Restore the defaults that SUPPRESS omitted.
     args.verbose = getattr(args, "verbose", 0)
-    args.env_file = getattr(args, "env_file", None)
     setup_logging(args.verbose)
 
     if args.command is None:
@@ -448,7 +440,7 @@ def _open_store(config: Config) -> Store:
 
 def _load(args) -> Config:
     """Config for a command that does not need a Navidrome server."""
-    return load_config(env_file=args.env_file, require_navidrome=False)
+    return load_config(require_navidrome=False)
 
 
 def _deezer_only(config: Config, store: Store) -> DeezerProvider:
@@ -464,7 +456,7 @@ def _deezer_only(config: Config, store: Store) -> DeezerProvider:
 
 
 def cmd_scan(args) -> int:
-    config = load_config(env_file=args.env_file)
+    config = load_config()
 
     if args.type:
         types = {_TYPE_ALIASES[t] for t in args.type}
@@ -505,31 +497,23 @@ def cmd_scan(args) -> int:
     return ExitCode.PARTIAL if summary.partial else ExitCode.OK
 
 
-def _settings_path(args) -> Path:
-    """Where `config` writes. Follows discovery, else the user config dir."""
-    if args.env_file:
-        return Path(args.env_file).expanduser()
-    found = find_env_file(None)
-    return found if found is not None else user_config_dir() / ".env"
-
-
 def cmd_setup(args) -> int:
     from .setup_wizard import run_setup
 
-    return run_setup(env_file=args.env_file)
+    return run_setup()
 
 
 def cmd_config(args) -> int:
     # A bare `config` shows the settings; there is no separate `list`.
     action = getattr(args, "config_action", None) or "show"
-    path = _settings_path(args)
+    path = settings_path()
 
     if action == "path":
         print(path)
         return ExitCode.OK
 
     if action == "show":
-        rows = describe_settings(args.env_file)
+        rows = describe_settings()
         width = max(len(r.setting.key) for r in rows)
         value_width = max(len(r.display) for r in rows)
         for row in rows:
@@ -594,7 +578,7 @@ def cmd_config(args) -> int:
     print(f"Set {args.key} = {value}")
 
     conflict = next(
-        (r for r in describe_settings(args.env_file) if r.setting.key == args.key), None
+        (r for r in describe_settings() if r.setting.key == args.key), None
     )
     if conflict is not None and conflict.source == "environment":
         print(
@@ -616,7 +600,7 @@ def _write_one(path: Path, env_var: str, value: str | None) -> None:
 
 
 def cmd_check(args) -> int:
-    config = load_config(env_file=args.env_file)
+    config = load_config()
     with _open_store(config) as store:
         client, _ = _make_clients(config, store, refresh=False)
         server = client.ping()

@@ -8,6 +8,7 @@ forever — have happened, hence these run the real interpreter.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -15,13 +16,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def run(args: list[str], cwd: Path) -> subprocess.CompletedProcess:
+def run(
+    args: list[str], cwd: Path, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess:
     return subprocess.run(
         [sys.executable, *args],
         cwd=cwd,
         capture_output=True,
         text=True,
         timeout=60,
+        env={**os.environ, **(env or {})},
     )
 
 
@@ -57,8 +61,9 @@ class TestInvocations:
         env_file = tmp_path / "empty.env"
         env_file.write_text("")
         result = run(
-            [str(ROOT / "dropwatch.py"), "check", "--env-file", str(env_file)],
+            [str(ROOT / "dropwatch.py"), "check"],
             tmp_path,
+            env={"DROPWATCH_ENV": str(env_file)},
         )
         assert result.returncode == 3, result.stderr
         assert "Traceback" not in result.stderr
