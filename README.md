@@ -224,6 +224,7 @@ dropwatch scan --since 2026-06         # ...a month...
 dropwatch scan --since 2026-06-15      # ...or an exact date
 dropwatch scan --type album --type ep  # skip singles
 dropwatch scan --artist "Björk"        # one artist
+dropwatch scan --favorites             # only artists starred in Navidrome
 dropwatch scan --flat                  # no type groups, pure date order
 dropwatch scan --refresh               # ignore the cache, refetch
 dropwatch scan -v                      # progress detail on stderr

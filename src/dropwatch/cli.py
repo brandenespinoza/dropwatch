@@ -132,6 +132,22 @@ def build_parser() -> argparse.ArgumentParser:
         choices=sorted(_TYPE_ALIASES),
         help="only report these release types (repeatable)",
     )
+    favorites = scan.add_mutually_exclusive_group()
+    favorites.add_argument(
+        "--favorites",
+        dest="favorites",
+        action="store_const",
+        const=True,
+        help="only artists you have starred in Navidrome",
+    )
+    favorites.add_argument(
+        "--all-artists",
+        dest="favorites",
+        action="store_const",
+        const=False,
+        help="every artist, overriding a saved `favorites` setting",
+    )
+    scan.set_defaults(favorites=None)
     scan.add_argument(
         "--refresh",
         action="store_true",
@@ -299,7 +315,7 @@ def _parse_since(text: str) -> ReleaseDate:
 #: old bare-invocation habit and say where they moved to.
 SCAN_FLAGS = {
     "--artist", "--limit", "--since", "--type", "--refresh", "--flat",
-    "--no-progress",
+    "--no-progress", "--favorites", "--all-artists",
 }
 
 #: Flags that consume the next token, so it is a value rather than a subcommand.
@@ -469,6 +485,8 @@ def cmd_scan(args) -> int:
         limit=args.limit,
         since=args.since,
         types=types,
+        # The flag decides when given; otherwise the saved setting does.
+        favorites=config.favorites_only if args.favorites is None else args.favorites,
         progress=not args.no_progress,
     )
 

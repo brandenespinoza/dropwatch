@@ -158,6 +158,29 @@ class NavidromeClient:
         log.info("Navidrome reports %d album artists", len(artists))
         return artists
 
+    def get_starred_artists(self) -> list[LocalArtist]:
+        """Artists you have favourited in Navidrome.
+
+        Read rather than asked for: the library already records which artists
+        matter to you, so a "favourites only" scan should use that list rather
+        than ask you to maintain a second copy of it.
+
+        Starring an album or a song does not star its artist, so this is only
+        the artists themselves.
+        """
+        body = self._call("getStarred2.view")
+        container = body.get("starred2") or {}
+        artists = [
+            LocalArtist(
+                id=str(entry.get("id", "")),
+                name=entry.get("name", "") or "",
+                album_count=int(entry.get("albumCount") or 0),
+            )
+            for entry in (container.get("artist") or [])
+        ]
+        log.info("Navidrome reports %d starred artists", len(artists))
+        return artists
+
     def get_artist_albums(self, artist_id: str) -> list[LocalAlbum]:
         body = self._call("getArtist.view", {"id": artist_id})
         artist = body.get("artist") or {}

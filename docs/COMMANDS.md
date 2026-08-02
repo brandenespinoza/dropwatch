@@ -72,6 +72,7 @@ history and in `ps` output. Use `config password`.
 | `cache-path` | `~/.local/state/dropwatch/state.sqlite3` | Where local state lives. |
 | `cache-max-age` | `24` | Lifetime for volatile cache entries. Album track lists are kept 30 days regardless. |
 | `types` | all | Release types to report, comma separated: `album`, `ep`, `single`, `unknown`. |
+| `favorites` | `false` | Scan only artists starred in Navidrome. |
 
 Every setting has a matching environment variable, derived from the key with no
 exceptions: `DROPWATCH_` + the key uppercased, `-` becoming `_`. So `timeout` is
@@ -122,7 +123,14 @@ dropwatch scan                             # the whole library
 dropwatch scan --since 2024-06-01          # only releases on or after this date
 dropwatch scan --artist "Björk" --artist "Ghost"
 dropwatch scan --limit 20 --type album
+dropwatch scan --favorites                 # only artists you have starred
 ```
+
+**Favourites** are read from Navidrome, not kept here — starring an artist in
+Navidrome is the whole of the setup. `--favorites` restricts one scan;
+`dropwatch config set favorites true` makes it the default, and
+`--all-artists` overrides that for a single run. An artist starred but not an
+album artist (starred via a single, say) has nothing to scan and is skipped.
 
 | Flag | Effect |
 |---|---|
@@ -130,6 +138,8 @@ dropwatch scan --limit 20 --type album
 | `--limit N` | Scan at most N artists. |
 | `--since DATE` | Only consider releases on or after `YYYY`, `YYYY-MM` or `YYYY-MM-DD`. |
 | `--type TYPE` | Only report `album`, `ep`, `single` or `unknown`. Repeatable. Overrides the `types` setting for this run. |
+| `--favorites` | Only artists you have starred in Navidrome. |
+| `--all-artists` | Every artist, overriding a saved `favorites` setting. |
 | `--refresh` | Ignore cached Deezer data and refetch everything. Slow. |
 | `--flat` | One continuous list sorted by date, without release-type groups. |
 | `--no-progress` | Suppress the progress line. |

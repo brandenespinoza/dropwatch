@@ -87,6 +87,27 @@ def _check_positive_number(value: str, key: str) -> str:
     return f"{number:g}"
 
 
+#: Spellings accepted for a yes/no setting, stored canonically as true/false.
+_TRUTHY = {"true", "yes", "on", "1"}
+_FALSEY = {"false", "no", "off", "0"}
+
+
+def _check_boolean(value: str, key: str) -> str:
+    folded = value.strip().casefold()
+    if folded in _TRUTHY:
+        return "true"
+    if folded in _FALSEY:
+        return "false"
+    raise ConfigError(
+        f"{key} must be true or false, got {value!r}",
+        hint="Also accepted: yes/no, on/off, 1/0.",
+    )
+
+
+def is_true(value: str | None) -> bool:
+    return (value or "").strip().casefold() in _TRUTHY
+
+
 def _check_path(value: str, key: str) -> str:
     """Accept a writable-looking path, stored absolute."""
     path = Path(value).expanduser()
@@ -159,6 +180,8 @@ SETTINGS: tuple[Setting, ...] = (
     Setting("types", "Release types to report, comma separated (album, ep, single)",
             implicit=lambda: "all",
             check=lambda v, _k: ",".join(sorted(parse_release_types(v))).lower()),
+    Setting("favorites", "Scan only artists starred in Navidrome",
+            default="false", check=_check_boolean),
 )
 
 SETTINGS_BY_KEY = {s.key: s for s in SETTINGS}
@@ -314,6 +337,7 @@ class Config:
     cache_path: Path = field(default_factory=lambda: default_state_dir() / "state.sqlite3")
     cache_max_age_hours: float = DEFAULT_CACHE_MAX_AGE_HOURS
     release_types: frozenset[str] = frozenset()
+    favorites_only: bool = False
     verify_tls: bool = True
     #: Set when the config was loaded without demanding Navidrome credentials.
     missing_navidrome: tuple[str, ...] = ()
@@ -558,6 +582,7 @@ def load_config(
             get("cache-max-age"), DEFAULT_CACHE_MAX_AGE_HOURS, "cache-max-age"
         ),
         release_types=parse_release_types(get("types")),
+        favorites_only=is_true(get("favorites")),
         missing_navidrome=tuple(missing),
     )
 

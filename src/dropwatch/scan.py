@@ -17,7 +17,7 @@ from .classify import resolve_type
 from .config import Config
 from .deezer import DeezerProvider
 from .dedupe import dedupe_results, deduplicate
-from .errors import DropWatchError
+from .errors import ConfigError, DropWatchError
 from .models import (
     DeezerRelease,
     LocalAlbum,
@@ -55,6 +55,8 @@ class ScanOptions:
     limit: int | None = None
     since: ReleaseDate | None = None
     types: set[ReleaseType] | None = None
+    #: Restrict to artists starred in Navidrome.
+    favorites: bool = False
     progress: bool = True
 
 
@@ -207,6 +209,9 @@ class Scanner:
         if orphans:
             log.info("%d album(s) had no matching album artist entry", orphans)
 
+        if options.favorites:
+            artists = self._only_favorites(artists)
+
         if options.artist_filters:
             wanted = {fold(name) for name in options.artist_filters}
             artists = [a for a in artists if fold(a.name) in wanted]
@@ -218,6 +223,36 @@ class Scanner:
         if options.limit:
             artists = artists[: options.limit]
         return artists
+
+    def _only_favorites(self, artists: list[LocalArtist]) -> list[LocalArtist]:
+        """Keep the album artists you have starred in Navidrome.
+
+        Matched on id, falling back to a folded name: an artist can be starred
+        without being an *album* artist — starred via a single, say — and those
+        have nothing here to scan.
+        """
+        starred = self.client.get_starred_artists()
+        if not starred:
+            raise ConfigError(
+                "No starred artists in Navidrome.",
+                hint=(
+                    "Favourite some artists in Navidrome, or drop --favorites "
+                    "to scan the whole library."
+                ),
+            )
+
+        ids = {a.id for a in starred if a.id}
+        names = {fold(a.name) for a in starred if a.name}
+        kept = [a for a in artists if a.id in ids or fold(a.name) in names]
+
+        skipped = len(starred) - len(kept)
+        if skipped > 0:
+            log.info(
+                "%d starred artist(s) are not album artists and have nothing to scan",
+                skipped,
+            )
+        log.info("Scanning %d of %d starred artists", len(kept), len(starred))
+        return kept
 
     def load_local_tracks(self, artist: LocalArtist) -> int:
         """Fill in track lists for the artist's albums, using the cache."""

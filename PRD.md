@@ -138,7 +138,13 @@ name.
 acted on meant knowing which command applied before you could start.
 
 Scan flags: `--artist NAME` (repeatable), `--limit N`, `--since YEAR`,
-`--type TYPE` (repeatable), `--flat`, `--refresh`, `--no-progress`.
+`--type TYPE` (repeatable), `--favorites` / `--all-artists`, `--flat`,
+`--refresh`, `--no-progress`.
+
+`--favorites` restricts the scan to artists starred in Navidrome, read from
+`getStarred2`. The library already records which artists matter, so the tool
+does not ask for a second copy of that list. Persisted as the `favorites`
+setting; `--all-artists` overrides it for one run.
 
 `--since` accepts `YYYY`, `YYYY-MM` or `YYYY-MM-DD`. Comparison stops at
 whichever side is less precise, so a release dated only `2024` is not excluded
