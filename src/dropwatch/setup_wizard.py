@@ -17,6 +17,7 @@ from .config import (
     Config,
     describe_settings,
     invocation_name,
+    load_dotenv,
     normalize_url,
     save_settings,
     settings_path,
@@ -166,7 +167,7 @@ def run_setup(environ: dict[str, str] | None = None) -> int:
             print(f"  ✗ {exc}", file=sys.stderr)
         else:
             print(f"  ✓ Connected to {server}\n")
-            _save(target, url, username, password, resolved)
+            _save(target, url, username, password)
             print(f"Saved to {target}\n")
             program = invocation_name()
             print("You're ready:")
@@ -187,7 +188,7 @@ def run_setup(environ: dict[str, str] | None = None) -> int:
     if url and username and password and _confirm(
         "Could not connect. Save these settings anyway?", default=False
     ):
-        _save(target, url, username, password, resolved)
+        _save(target, url, username, password)
         print(f"\nSaved to {target}", file=sys.stderr)
         print(
             f"Run `{invocation_name()} check` once the server is reachable.",
@@ -199,15 +200,21 @@ def run_setup(environ: dict[str, str] | None = None) -> int:
     return ExitCode.CONFIG
 
 
-def _save(target: Path, url: str, username: str, password: str, resolved: dict) -> None:
-    values = {
-        SETTINGS_BY_KEY["url"].env_var: url,
-        SETTINGS_BY_KEY["username"].env_var: username,
-        SETTINGS_BY_KEY["password"].env_var: password,
-    }
-    # Carry through any optional settings already present in the file.
-    for key in ("timeout", "cache-path", "cache-max-age", "types"):
-        entry = resolved.get(key)
-        if entry is not None and entry.value and entry.source not in ("default", "environment"):
-            values[entry.setting.env_var] = entry.value
+def _save(target: Path, url: str, username: str, password: str) -> None:
+    """Write the three values the wizard collects, keeping everything else.
+
+    Starting from the file rather than from resolved settings matters: a
+    setting currently shadowed by an environment variable reads as coming from
+    the environment, so rebuilding the file from resolved values silently
+    dropped whatever the file said. Re-running setup should never lose a
+    setting you are not being asked about.
+    """
+    values = load_dotenv(target)
+    values.update(
+        {
+            SETTINGS_BY_KEY["url"].env_var: url,
+            SETTINGS_BY_KEY["username"].env_var: username,
+            SETTINGS_BY_KEY["password"].env_var: password,
+        }
+    )
     save_settings(target, values)

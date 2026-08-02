@@ -216,6 +216,51 @@ CONFIG_HEADER = """\
 """
 
 
+#: A bare value survives the round trip unless it has edge whitespace or
+#: characters the reader would otherwise consume.
+_NEEDS_QUOTING = re.compile(r'^\s|\s$|[\n\r"\']')
+
+
+def encode_value(value: str) -> str:
+    """Quote a value when writing it bare would not read back identically.
+
+    Passwords are the reason. `hunter2 ` with a trailing space, or one that
+    genuinely contains quotes, used to be written bare and read back altered —
+    silently, and after `setup` had already tested the unaltered version
+    against the server and reported success.
+    """
+    if value and not _NEEDS_QUOTING.search(value):
+        return value
+    escaped = (
+        value.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+    )
+    return f'"{escaped}"'
+
+
+_ESCAPES = {"n": "\n", "r": "\r", '"': '"', "\\": "\\"}
+
+
+def decode_value(raw: str) -> str:
+    """Inverse of `encode_value`, tolerant of hand-written files."""
+    if len(raw) >= 2 and raw[0] == raw[-1] == "'":
+        return raw[1:-1]  # single quotes are literal, as in POSIX shells
+    if not (len(raw) >= 2 and raw[0] == raw[-1] == '"'):
+        return raw
+
+    inner, out, i = raw[1:-1], [], 0
+    while i < len(inner):
+        if inner[i] == "\\" and i + 1 < len(inner):
+            out.append(_ESCAPES.get(inner[i + 1], "\\" + inner[i + 1]))
+            i += 2
+        else:
+            out.append(inner[i])
+            i += 1
+    return "".join(out)
+
+
 def save_settings(path: Path, values: dict[str, str]) -> None:
     """Write the config file atomically at mode 600.
 
@@ -239,12 +284,12 @@ def save_settings(path: Path, values: dict[str, str]) -> None:
         if value is None or value == "":
             continue
         lines.append(f"# {setting.help}")
-        lines.append(f"{setting.env_var}={value}")
+        lines.append(f"{setting.env_var}={encode_value(value)}")
         lines.append("")
     if extra:
         lines.append("# Preserved from a hand-edited file")
         for key, value in sorted(extra.items()):
-            lines.append(f"{key}={value}")
+            lines.append(f"{key}={encode_value(value)}")
         lines.append("")
 
     body = "\n".join(lines)
@@ -341,8 +386,7 @@ def load_dotenv(path: Path) -> dict[str, str]:
             continue
         key = key.strip()
         value = value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-            value = value[1:-1]
+        value = decode_value(value)
         if key:
             values[key] = value
     return values
@@ -476,13 +520,16 @@ def load_config(
         """A required credential, named the way you would set it.
 
         Errors quote the config key, not the environment variable behind it:
-        you typed `url`, so being told the environment variable was unset
-        made you
-        translate before you could act.
+        you typed `url`, so being told the environment variable was unset made
+        you translate before you could act.
         """
         setting = SETTINGS_BY_KEY[key]
-        raw = (get(key) or "").strip()
-        if raw:
+        raw = get(key) or ""
+        # Surrounding whitespace is formatting in a URL or username and
+        # content in a password, so only the former gets tidied.
+        if not setting.secret:
+            raw = raw.strip()
+        if raw.strip():
             return setting.validate(raw)
         if require_navidrome:
             fix = "config password" if setting.secret else f"config set {key} <value>"

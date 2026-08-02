@@ -367,3 +367,116 @@ class TestDisplay:
         assert "cache-path" in out
         assert "(not set)" not in out.split("cache-path")[1].split("\n")[0]
         assert "state.sqlite3" in out
+
+
+class TestValueRoundTrip:
+    """Whatever is saved must read back byte-identical.
+
+    Passwords are why. A value written bare and read back stripped meant
+    `setup` could test a password against the server, report success, save a
+    different string, and leave every later command failing authentication
+    with nothing to explain it.
+    """
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "hunter2",
+            "hunter2 ",                 # trailing space
+            " hunter2",                 # leading space
+            "   ",                      # only spaces
+            '"hunter2"',                # literal double quotes
+            "'hunter2'",                # literal single quotes
+            "a=b=c",                    # equals signs
+            "pa#ss",                    # a hash mid-value
+            "#hunter2",                 # a leading hash
+            "one\ntwo",                 # a newline would have split the line
+            "back\\slash",
+            "tab\there",
+            "üñïçø∂é",
+            "export FOO=bar",           # looks like a directive
+        ],
+    )
+    def test_survives_save_and_load(self, tmp_path, value):
+        path = tmp_path / ".env"
+        save_settings(path, {"DROPWATCH_PASSWORD": value})
+        assert load_dotenv(path)["DROPWATCH_PASSWORD"] == value
+
+    def test_a_newline_does_not_corrupt_neighbouring_keys(self, tmp_path):
+        path = tmp_path / ".env"
+        save_settings(
+            path, {"DROPWATCH_PASSWORD": "one\ntwo", "DROPWATCH_USERNAME": "me"}
+        )
+        values = load_dotenv(path)
+        assert values["DROPWATCH_PASSWORD"] == "one\ntwo"
+        assert values["DROPWATCH_USERNAME"] == "me"
+
+    def test_hand_written_forms_still_parse(self, tmp_path):
+        path = tmp_path / ".env"
+        path.write_text(
+            "# a comment\n"
+            "export DROPWATCH_URL=http://example:4533\n"
+            "DROPWATCH_USERNAME = spaced \n"
+            "DROPWATCH_PASSWORD='literal single'\n"
+        )
+        values = load_dotenv(path)
+        assert values["DROPWATCH_URL"] == "http://example:4533"
+        assert values["DROPWATCH_USERNAME"] == "spaced"
+        assert values["DROPWATCH_PASSWORD"] == "literal single"
+
+    def test_edge_whitespace_survives_into_the_config(self, tmp_path, monkeypatch):
+        """load_config strips a url but must not strip a password."""
+        from dropwatch.config import load_config
+
+        path = tmp_path / ".env"
+        save_settings(
+            path,
+            {
+                "DROPWATCH_URL": "http://example:4533",
+                "DROPWATCH_USERNAME": "me",
+                "DROPWATCH_PASSWORD": " pad ded ",
+            },
+        )
+        config = load_config(environ={"DROPWATCH_ENV": str(path)})
+        assert config.navidrome_password.reveal() == " pad ded "
+
+
+class TestSetupPreservesTheFile:
+    def test_settings_it_does_not_ask_about_are_kept(self, tmp_path):
+        from dropwatch.setup_wizard import _save
+
+        path = tmp_path / ".env"
+        save_settings(
+            path,
+            {
+                "DROPWATCH_URL": "http://old:1",
+                "DROPWATCH_USERNAME": "old",
+                "DROPWATCH_PASSWORD": "old",
+                "DROPWATCH_TYPES": "album,ep",
+                "DROPWATCH_TIMEOUT": "45",
+            },
+        )
+        _save(path, "http://new:2", "new", "new")
+        values = load_dotenv(path)
+        assert values["DROPWATCH_URL"] == "http://new:2"
+        assert values["DROPWATCH_TYPES"] == "album,ep"
+        assert values["DROPWATCH_TIMEOUT"] == "45"
+
+    def test_a_shadowed_setting_is_not_dropped(self, tmp_path, monkeypatch):
+        """The specific loss: rebuilding the file from resolved settings saw
+        `types` as coming from the environment and wrote nothing for it."""
+        from dropwatch.setup_wizard import _save
+
+        path = tmp_path / ".env"
+        save_settings(
+            path,
+            {
+                "DROPWATCH_URL": "http://old:1",
+                "DROPWATCH_USERNAME": "u",
+                "DROPWATCH_PASSWORD": "p",
+                "DROPWATCH_TYPES": "album,ep",
+            },
+        )
+        monkeypatch.setenv("DROPWATCH_TYPES", "single")
+        _save(path, "http://old:1", "u", "p")
+        assert load_dotenv(path)["DROPWATCH_TYPES"] == "album,ep"
