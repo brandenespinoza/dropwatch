@@ -73,7 +73,7 @@ class NavidromeClient:
                 f"Navidrome returned 404 for {endpoint}.",
                 hint=(
                     f"The server is reachable but {self.config.rest_base} is not the "
-                    "Subsonic API path. Check NAVIDROME_URL — it should be the base "
+                    "Subsonic API path. Check the url setting — it should be the base "
                     "URL only, e.g. http://your-server:4533"
                 ),
             )
@@ -81,7 +81,7 @@ class NavidromeClient:
             raise NavidromeAuthError(
                 "Navidrome rejected the credentials (HTTP "
                 f"{response.status}).",
-                hint="Check NAVIDROME_USERNAME and NAVIDROME_PASSWORD.",
+                hint="Check `dropwatch config`, or re-run `dropwatch setup`.",
             )
         if response.status >= 500:
             raise UnexpectedResponseError(
@@ -94,7 +94,7 @@ class NavidromeClient:
                 f"{self.config.navidrome_url} returned an HTML page, not the Subsonic API.",
                 hint=(
                     "This is usually the Navidrome web UI or a reverse proxy. Set "
-                    "NAVIDROME_URL to the base URL Navidrome is served from."
+                    "the url setting to the base URL Navidrome is served from."
                 ),
             )
 
@@ -110,7 +110,7 @@ class NavidromeClient:
             raise NotSubsonicError(
                 f"{self.config.navidrome_url} answered, but it is not a "
                 "Subsonic-compatible API.",
-                hint="Check that NAVIDROME_URL points at Navidrome and not another service.",
+                hint="Check that the url setting points at Navidrome, not another service.",
             )
 
         body = payload["subsonic-response"]
@@ -121,7 +121,7 @@ class NavidromeClient:
             if code in _AUTH_ERROR_CODES:
                 raise NavidromeAuthError(
                     f"Navidrome rejected the credentials: {message}",
-                    hint="Check NAVIDROME_USERNAME and NAVIDROME_PASSWORD in your .env file.",
+                    hint="Check `dropwatch config`, or re-run `dropwatch setup`.",
                 )
             raise UnexpectedResponseError(
                 f"Navidrome returned an error for {endpoint}: {message} (code {code})"

@@ -18,7 +18,7 @@ class TestNoSubcommand:
 
     def test_bare_invocation_touches_nothing(self, capsys, monkeypatch):
         # No config is set here; a scan would fail on it. Help must not care.
-        for key in ("NAVIDROME_URL", "NAVIDROME_USERNAME", "NAVIDROME_PASSWORD"):
+        for key in ("DROPWATCH_URL", "DROPWATCH_USERNAME", "DROPWATCH_PASSWORD"):
             monkeypatch.delenv(key, raising=False)
         assert main([]) == ExitCode.OK
         assert "error" not in capsys.readouterr().err
@@ -113,20 +113,21 @@ class TestExitCodes:
         ) == 8
 
     def test_missing_configuration_exits_with_config_code(self, tmp_path, monkeypatch, capsys):
-        for key in ("NAVIDROME_URL", "NAVIDROME_USERNAME", "NAVIDROME_PASSWORD"):
+        for key in ("DROPWATCH_URL", "DROPWATCH_USERNAME", "DROPWATCH_PASSWORD"):
             monkeypatch.delenv(key, raising=False)
         monkeypatch.chdir(tmp_path)
         code = main(["check"])
         assert code == ExitCode.CONFIG
         err = capsys.readouterr().err
-        assert "NAVIDROME_URL" in err
+        assert "No configuration found" in err
+        assert "dropwatch setup" in err
         assert "error:" in err
 
     def test_error_hint_is_printed(self, tmp_path, monkeypatch, capsys):
         env = tmp_path / ".env"
-        env.write_text("NAVIDROME_URL=ftp://your-server\nNAVIDROME_USERNAME=u\nNAVIDROME_PASSWORD=p\n")
+        env.write_text("DROPWATCH_URL=ftp://your-server\nDROPWATCH_USERNAME=u\nDROPWATCH_PASSWORD=p\n")
         monkeypatch.chdir(tmp_path)
-        for key in ("NAVIDROME_URL", "NAVIDROME_USERNAME", "NAVIDROME_PASSWORD"):
+        for key in ("DROPWATCH_URL", "DROPWATCH_USERNAME", "DROPWATCH_PASSWORD"):
             monkeypatch.delenv(key, raising=False)
         monkeypatch.setenv("DROPWATCH_ENV", str(env))
         assert main(["check"]) == ExitCode.CONFIG
@@ -137,12 +138,12 @@ class TestStateCommands:
     def _env(self, tmp_path, monkeypatch):
         env = tmp_path / ".env"
         env.write_text(
-            "NAVIDROME_URL=http://example:4533\n"
-            "NAVIDROME_USERNAME=u\n"
-            "NAVIDROME_PASSWORD=p\n"
-            f"CACHE_PATH={tmp_path / 'state.sqlite3'}\n"
+            "DROPWATCH_URL=http://example:4533\n"
+            "DROPWATCH_USERNAME=u\n"
+            "DROPWATCH_PASSWORD=p\n"
+            f"DROPWATCH_CACHE_PATH={tmp_path / 'state.sqlite3'}\n"
         )
-        for key in ("NAVIDROME_URL", "NAVIDROME_USERNAME", "NAVIDROME_PASSWORD", "CACHE_PATH"):
+        for key in ("DROPWATCH_URL", "DROPWATCH_USERNAME", "DROPWATCH_PASSWORD", "DROPWATCH_CACHE_PATH"):
             monkeypatch.delenv(key, raising=False)
         monkeypatch.setenv("DROPWATCH_ENV", str(env))
         return []

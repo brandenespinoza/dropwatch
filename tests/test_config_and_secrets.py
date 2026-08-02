@@ -160,9 +160,9 @@ class TestRedaction:
 class TestLoadConfig:
     def _env_file(self, tmp_path, **overrides):
         values = {
-            "NAVIDROME_URL": "http://example:4533",
-            "NAVIDROME_USERNAME": "tester",
-            "NAVIDROME_PASSWORD": PASSWORD,
+            "DROPWATCH_URL": "http://example:4533",
+            "DROPWATCH_USERNAME": "tester",
+            "DROPWATCH_PASSWORD": PASSWORD,
         }
         values.update(overrides)
         path = tmp_path / ".env"
@@ -180,23 +180,23 @@ class TestLoadConfig:
         config = load_config(
             environ={
                 "DROPWATCH_ENV": str(path),
-                "NAVIDROME_URL": "http://other:9000",
+                "DROPWATCH_URL": "http://other:9000",
             },
         )
         assert config.navidrome_url == "http://other:9000"
 
     def test_missing_credentials_raise_config_error(self, tmp_path):
         path = tmp_path / ".env"
-        path.write_text("NAVIDROME_URL=http://example:4533\n")
-        with pytest.raises(ConfigError, match="NAVIDROME_USERNAME"):
+        path.write_text("DROPWATCH_URL=http://example:4533\n")
+        with pytest.raises(ConfigError, match="username"):
             load_config(environ={"DROPWATCH_ENV": str(path)})
 
     def test_invalid_timeout_is_rejected(self, tmp_path):
-        with pytest.raises(ConfigError, match="REQUEST_TIMEOUT_SECONDS"):
+        with pytest.raises(ConfigError, match="timeout"):
             load_config(
                 environ={
                     "DROPWATCH_ENV": str(
-                        self._env_file(tmp_path, REQUEST_TIMEOUT_SECONDS="-3")
+                        self._env_file(tmp_path, DROPWATCH_TIMEOUT="-3")
                     )
                 }
             )
@@ -205,16 +205,16 @@ class TestLoadConfig:
         path = tmp_path / ".env"
         path.write_text(
             "# a comment\n"
-            'NAVIDROME_URL="http://example:4533"\n'
+            'DROPWATCH_URL="http://example:4533"\n'
             "\n"
-            "export NAVIDROME_USERNAME=tester\n"
-            "NAVIDROME_PASSWORD='pass word'\n"
+            "export DROPWATCH_USERNAME=tester\n"
+            "DROPWATCH_PASSWORD='pass word'\n"
             "IGNORED_LINE\n"
         )
         values = load_dotenv(path)
-        assert values["NAVIDROME_URL"] == "http://example:4533"
-        assert values["NAVIDROME_USERNAME"] == "tester"
-        assert values["NAVIDROME_PASSWORD"] == "pass word"
+        assert values["DROPWATCH_URL"] == "http://example:4533"
+        assert values["DROPWATCH_USERNAME"] == "tester"
+        assert values["DROPWATCH_PASSWORD"] == "pass word"
         assert "IGNORED_LINE" not in values
 
     def test_world_readable_env_file_warns(self, tmp_path):
@@ -238,7 +238,7 @@ class TestEnvFileDiscovery:
     def _write(self, path: Path, url: str) -> Path:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
-            f"NAVIDROME_URL={url}\nNAVIDROME_USERNAME=u\nNAVIDROME_PASSWORD=p\n"
+            f"DROPWATCH_URL={url}\nDROPWATCH_USERNAME=u\nDROPWATCH_PASSWORD=p\n"
         )
         return path
 
@@ -314,9 +314,9 @@ class TestEnvFileDiscovery:
         monkeypatch.chdir(tmp_path)
         config = load_config(
             environ={
-                "NAVIDROME_URL": "http://example:4533",
-                "NAVIDROME_USERNAME": "u",
-                "NAVIDROME_PASSWORD": "p",
+                "DROPWATCH_URL": "http://example:4533",
+                "DROPWATCH_USERNAME": "u",
+                "DROPWATCH_PASSWORD": "p",
                 "DROPWATCH_CONFIG_DIR": str(tmp_path / "cfg"),
             }
         )

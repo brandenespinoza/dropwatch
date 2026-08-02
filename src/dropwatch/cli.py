@@ -515,11 +515,16 @@ def cmd_config(args) -> int:
     if action == "show":
         rows = describe_settings()
         width = max(len(r.setting.key) for r in rows)
-        value_width = max(len(r.display) for r in rows)
+        print(f"Settings file: {path}" + ("" if path.is_file() else "  (not created yet)"))
+        print()
         for row in rows:
-            source = "" if row.value is None else f"({row.source})"
-            line = f"{row.setting.key:<{width}}  {row.display:<{value_width}}  {source}"
-            print(line.rstrip())
+            # Only surprising provenance earns space. "default" is implied by
+            # the value and the file is named above; a shell variable winning
+            # is the thing people need to be told. The value column is left
+            # unpadded so the note sits beside its value rather than being
+            # pushed to the width of the longest path on screen.
+            note = f"  (from ${row.setting.env_var})" if row.source == "environment" else ""
+            print(f"  {row.setting.key:<{width}}  {row.display}{note}")
         print(
             f"\nChange one with: {invocation_name()} config set <key> <value>"
             f"\n         or all: {invocation_name()} setup"
@@ -540,17 +545,17 @@ def cmd_config(args) -> int:
         if not sys.stdin.isatty():
             print("error: setting a password needs an interactive terminal.", file=sys.stderr)
             return ExitCode.CONFIG
-        import getpass
+        from .setup_wizard import prompt_password
 
-        value = getpass.getpass("Navidrome password: ")
-        if not value:
-            print("No password entered; nothing changed.", file=sys.stderr)
+        setting = SETTINGS_BY_KEY["password"]
+        try:
+            value = prompt_password("Navidrome password")
+        except (EOFError, KeyboardInterrupt):
+            print("\nNothing changed.", file=sys.stderr)
             return ExitCode.CONFIG
-        if value != getpass.getpass("Confirm: "):
-            print("error: passwords did not match.", file=sys.stderr)
-            return ExitCode.CONFIG
-        _write_one(path, SETTINGS_BY_KEY["password"].env_var, value)
+        _write_one(path, setting.env_var, value)
         print(f"Password updated in {path}")
+        _warn_if_shadowed(setting)
         return ExitCode.OK
 
     setting = SETTINGS_BY_KEY[args.key]
@@ -558,6 +563,20 @@ def cmd_config(args) -> int:
     if action == "unset":
         _write_one(path, setting.env_var, None)
         print(f"Removed {args.key} from {path}")
+        if setting.required:
+            # Removing a credential leaves the tool unusable. Saying so here
+            # beats discovering it on the next scan. Flush first: stdout is
+            # block-buffered when piped, so the warning would otherwise print
+            # above the line it qualifies.
+            sys.stdout.flush()
+            print(
+                f"warning: {args.key} is required; nothing will run until it is "
+                f"set again.",
+                file=sys.stderr,
+            )
+        elif setting.effective_default is not None:
+            print(f"  Back to the default: {setting.effective_default}")
+        _warn_if_shadowed(setting)
         return ExitCode.OK
 
     # `set`. Secrets are rejected at the parser via choices, but guard anyway:
@@ -571,22 +590,29 @@ def cmd_config(args) -> int:
         print(f"  Use: {invocation_name()} config password", file=sys.stderr)
         return ExitCode.CONFIG
 
-    value = args.value
-    if args.key == "url":
-        value = normalize_url(value)
+    # Validated here, not on the next command that happens to read it: an
+    # invalid value should be refused by the thing that caused it.
+    value = setting.validate(args.value)
     _write_one(path, setting.env_var, value)
-    print(f"Set {args.key} = {value}")
+    if value != args.value:
+        print(f"Set {args.key} = {value}  (normalised from {args.value!r})")
+    else:
+        print(f"Set {args.key} = {value}")
+    _warn_if_shadowed(setting)
+    return ExitCode.OK
 
-    conflict = next(
-        (r for r in describe_settings() if r.setting.key == args.key), None
-    )
-    if conflict is not None and conflict.source == "environment":
+
+def _warn_if_shadowed(setting) -> None:
+    """Say so when a shell variable will still win over what was just written."""
+    row = next((r for r in describe_settings() if r.setting.key == setting.key), None)
+    if row is not None and row.source == "environment":
+        # Flush so the note lands after the line it qualifies, not before it.
+        sys.stdout.flush()
         print(
             f"note: ${setting.env_var} is set in your environment and still "
             "overrides this file.",
             file=sys.stderr,
         )
-    return ExitCode.OK
 
 
 def _write_one(path: Path, env_var: str, value: str | None) -> None:

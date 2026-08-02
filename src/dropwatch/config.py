@@ -11,6 +11,7 @@ import re
 import stat
 import sys
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
@@ -75,36 +76,89 @@ def find_env_file(environ: dict[str, str] | None = None) -> Path | None:
     return path if path.is_file() else None
 
 
+def _check_positive_number(value: str, key: str) -> str:
+    """Accept a positive number, returning it in canonical form."""
+    try:
+        number = float(value)
+    except ValueError:
+        raise ConfigError(f"{key} must be a number, got {value!r}") from None
+    if number <= 0:
+        raise ConfigError(f"{key} must be greater than 0, got {number:g}")
+    return f"{number:g}"
+
+
+def _check_path(value: str, key: str) -> str:
+    """Accept a writable-looking path, stored absolute."""
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = (Path.cwd() / path).resolve()
+    if path.is_dir():
+        raise ConfigError(
+            f"{key} must name a file, not a directory: {path}",
+            hint="For example: ~/.local/state/dropwatch/state.sqlite3",
+        )
+    return str(path)
+
+
 @dataclass(frozen=True)
 class Setting:
-    """One user-facing setting: a friendly CLI name over an env var."""
+    """One user-facing setting.
+
+    `check` validates and canonicalises a value at the moment it is set, so a
+    bad one is rejected by the command that caused it rather than surfacing on
+    some unrelated command later.
+    """
 
     key: str
-    env_var: str
     help: str
     secret: bool = False
     required: bool = False
     default: str | None = None
+    #: Effective value when unset and there is no literal default, for display.
+    implicit: Callable[[], str] | None = None
+    check: Callable[[str, str], str] | None = None
+
+    @property
+    def env_var(self) -> str:
+        """The environment variable, derived rather than declared.
+
+        One rule with no exceptions: DROPWATCH_ plus the key. The prefix keeps
+        a stray CACHE_PATH or NAVIDROME_PASSWORD in someone's shell from
+        quietly winning over their settings file, and deriving it means the
+        name you type and the name an error prints are always the same word.
+        """
+        return "DROPWATCH_" + self.key.upper().replace("-", "_")
+
+    def validate(self, value: str) -> str:
+        return self.check(value, self.key) if self.check else value
+
+    @property
+    def effective_default(self) -> str | None:
+        """What applies when nothing is set. None for required settings.
+
+        Some defaults are literals ("20"), others are computed at run time (the
+        state file path). Callers should not have to care which.
+        """
+        if self.default is not None:
+            return self.default
+        return self.implicit() if self.implicit is not None else None
 
 
 SETTINGS: tuple[Setting, ...] = (
-    Setting("url", "NAVIDROME_URL", "Navidrome base URL", required=True),
-    Setting("username", "NAVIDROME_USERNAME", "Navidrome username", required=True),
-    Setting(
-        "password",
-        "NAVIDROME_PASSWORD",
-        "Navidrome password",
-        secret=True,
-        required=True,
-    ),
-    Setting("timeout", "REQUEST_TIMEOUT_SECONDS", "Request timeout in seconds", default="20"),
-    Setting("cache-path", "CACHE_PATH", "Where local state is kept"),
-    Setting("cache-max-age", "CACHE_MAX_AGE_HOURS", "Cache lifetime in hours", default="24"),
-    Setting(
-        "types",
-        "RELEASE_TYPES",
-        "Release types to report, comma separated (album, ep, single)",
-    ),
+    Setting("url", "Navidrome base URL", required=True,
+            check=lambda v, _k: normalize_url(v)),
+    Setting("username", "Navidrome username", required=True),
+    Setting("password", "Navidrome password", secret=True, required=True),
+    Setting("timeout", "Request timeout in seconds", default="20",
+            check=_check_positive_number),
+    Setting("cache-path", "Where local state is kept",
+            implicit=lambda: str(default_state_dir() / "state.sqlite3"),
+            check=_check_path),
+    Setting("cache-max-age", "Cache lifetime in hours", default="24",
+            check=_check_positive_number),
+    Setting("types", "Release types to report, comma separated (album, ep, single)",
+            implicit=lambda: "all",
+            check=lambda v, _k: ",".join(sorted(parse_release_types(v))).lower()),
 )
 
 SETTINGS_BY_KEY = {s.key: s for s in SETTINGS}
@@ -121,9 +175,14 @@ class ResolvedSetting:
 
     @property
     def display(self) -> str:
-        if self.value is None:
-            return "(not set)"
-        return "********" if self.setting.secret else self.value
+        """What `config` prints. Never "(not set)" for something that has an
+        effective value — a state file path exists whether or not you chose it,
+        and showing nothing there sent people looking for a setting to fix."""
+        if self.setting.secret and self.value:
+            return "********"
+        if self.value is not None:
+            return self.value
+        return self.setting.effective_default or "(not set)"
 
 
 def describe_settings(environ: dict[str, str] | None = None) -> list[ResolvedSetting]:
@@ -224,16 +283,15 @@ class Config:
         return not self.missing_navidrome
 
 
-def _parse_float(raw: str | None, default: float, name: str) -> float:
+def _number(raw: str | None, default: float, key: str) -> float:
+    """Read a numeric setting, validating it the same way `config set` does.
+
+    A value can still reach here unvalidated — hand-edited file, exported shell
+    variable — so the check is not redundant, but it is the same check.
+    """
     if raw is None or raw.strip() == "":
         return default
-    try:
-        value = float(raw)
-    except ValueError:
-        raise ConfigError(f"{name} must be a number, got {raw!r}") from None
-    if value <= 0:
-        raise ConfigError(f"{name} must be greater than 0, got {value}")
-    return value
+    return float(_check_positive_number(raw, key))
 
 
 #: Accepted spellings for the `types` setting and the --type flag.
@@ -315,8 +373,8 @@ def normalize_url(raw: str) -> str:
     value = (raw or "").strip()
     if not value:
         raise ConfigError(
-            "NAVIDROME_URL is not set.",
-            hint="Example: NAVIDROME_URL=http://your-server:4533",
+            "url is not set.",
+            hint="Example: dropwatch config set url http://your-server:4533",
         )
 
     if "://" not in value:
@@ -326,30 +384,30 @@ def normalize_url(raw: str) -> str:
 
     if parts.scheme not in ("http", "https"):
         raise ConfigError(
-            f"NAVIDROME_URL must use http or https, got {parts.scheme!r}.",
-            hint="Example: NAVIDROME_URL=http://your-server:4533",
+            f"url must use http or https, got {parts.scheme!r}.",
+            hint="Example: dropwatch config set url http://your-server:4533",
         )
     if not parts.hostname:
         raise ConfigError(
-            f"NAVIDROME_URL has no hostname: {raw!r}",
-            hint="Example: NAVIDROME_URL=http://your-server:4533",
+            f"url has no hostname: {raw!r}",
+            hint="Example: dropwatch config set url http://your-server:4533",
         )
     if parts.query or parts.fragment:
         raise ConfigError(
-            "NAVIDROME_URL must not contain a query string or fragment.",
+            "url must not contain a query string or fragment.",
             hint="Use just the base URL, for example http://your-server:4533",
         )
     if parts.username or parts.password:
         raise ConfigError(
-            "Do not put credentials in NAVIDROME_URL.",
-            hint="Use NAVIDROME_USERNAME and NAVIDROME_PASSWORD instead.",
+            "Do not put credentials in the url.",
+            hint="Use the username and password settings instead.",
         )
     try:
         port = parts.port
     except ValueError:
-        raise ConfigError(f"NAVIDROME_URL has an invalid port: {raw!r}") from None
+        raise ConfigError(f"url has an invalid port: {raw!r}") from None
     if port is not None and not 1 <= port <= 65535:
-        raise ConfigError(f"NAVIDROME_URL port must be 1-65535, got {port}")
+        raise ConfigError(f"url port must be 1-65535, got {port}")
 
     path = parts.path.rstrip("/")
     # A base URL ending in /rest is a common mix-up; /rest is appended for us.
@@ -395,53 +453,50 @@ def load_config(
         warn_if_world_readable(env_path, warn_stream)
 
     def get(key: str) -> str | None:
-        # Real environment variables take precedence over the .env file.
-        value = environ.get(key)
+        """Raw value for a setting. A real environment variable wins."""
+        env_var = SETTINGS_BY_KEY[key].env_var
+        value = environ.get(env_var)
         if value is not None and value.strip() != "":
             return value
-        return file_values.get(key)
+        return file_values.get(env_var)
 
-    if env_path is None and not get("NAVIDROME_URL"):
+    if env_path is None and not get("url"):
         if require_navidrome:
             raise ConfigError(
                 "No configuration found.",
                 hint=(
-                    f"Run `{invocation_name()} setup` to configure it, or set "
-                    f"NAVIDROME_URL in the environment.\n"
+                    f"Run `{invocation_name()} setup` to configure it.\n"
                     f"  Expected a settings file at: {expected}"
                 ),
             )
 
-    where = f" in {env_path}" if env_path else ""
     missing: list[str] = []
 
-    raw_url = get("NAVIDROME_URL") or ""
-    if raw_url.strip() or require_navidrome:
-        # An empty URL under require_navidrome raises with the standard hint.
-        url = normalize_url(raw_url)
-    else:
-        url = ""
-        missing.append("NAVIDROME_URL")
+    def required(key: str) -> str:
+        """A required credential, named the way you would set it.
 
-    username = (get("NAVIDROME_USERNAME") or "").strip()
-    if not username:
+        Errors quote the config key, not the environment variable behind it:
+        you typed `url`, so being told the environment variable was unset
+        made you
+        translate before you could act.
+        """
+        setting = SETTINGS_BY_KEY[key]
+        raw = (get(key) or "").strip()
+        if raw:
+            return setting.validate(raw)
         if require_navidrome:
+            fix = "config password" if setting.secret else f"config set {key} <value>"
             raise ConfigError(
-                "NAVIDROME_USERNAME is not set.",
-                hint=f"Add NAVIDROME_USERNAME{where}.",
+                f"{key} is not set.", hint=f"Run `{invocation_name()} {fix}`."
             )
-        missing.append("NAVIDROME_USERNAME")
+        missing.append(key)
+        return ""
 
-    password = get("NAVIDROME_PASSWORD") or ""
-    if not password:
-        if require_navidrome:
-            raise ConfigError(
-                "NAVIDROME_PASSWORD is not set.",
-                hint=f"Add NAVIDROME_PASSWORD{where}.",
-            )
-        missing.append("NAVIDROME_PASSWORD")
+    url = required("url")
+    username = required("username")
+    password = required("password")
 
-    cache_raw = get("CACHE_PATH")
+    cache_raw = get("cache-path")
     cache_path = (
         Path(cache_raw).expanduser() if cache_raw else default_state_dir() / "state.sqlite3"
     )
@@ -450,16 +505,12 @@ def load_config(
         navidrome_url=url,
         navidrome_username=username,
         navidrome_password=Secret(password),
-        request_timeout=_parse_float(
-            get("REQUEST_TIMEOUT_SECONDS"), DEFAULT_TIMEOUT, "REQUEST_TIMEOUT_SECONDS"
-        ),
+        request_timeout=_number(get("timeout"), DEFAULT_TIMEOUT, "timeout"),
         cache_path=cache_path,
-        cache_max_age_hours=_parse_float(
-            get("CACHE_MAX_AGE_HOURS"),
-            DEFAULT_CACHE_MAX_AGE_HOURS,
-            "CACHE_MAX_AGE_HOURS",
+        cache_max_age_hours=_number(
+            get("cache-max-age"), DEFAULT_CACHE_MAX_AGE_HOURS, "cache-max-age"
         ),
-        release_types=parse_release_types(get("RELEASE_TYPES")),
+        release_types=parse_release_types(get("types")),
         missing_navidrome=tuple(missing),
     )
 

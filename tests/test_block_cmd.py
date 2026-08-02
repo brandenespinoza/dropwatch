@@ -170,13 +170,13 @@ class TestRunsWithoutNavidrome:
     @pytest.fixture
     def state(self, tmp_path, monkeypatch):
         for key in (
-            "NAVIDROME_URL",
-            "NAVIDROME_USERNAME",
-            "NAVIDROME_PASSWORD",
-            "CACHE_PATH",
+            "DROPWATCH_URL",
+            "DROPWATCH_USERNAME",
+            "DROPWATCH_PASSWORD",
+            "DROPWATCH_CACHE_PATH",
         ):
             monkeypatch.delenv(key, raising=False)
-        monkeypatch.setenv("CACHE_PATH", str(tmp_path / "state.sqlite3"))
+        monkeypatch.setenv("DROPWATCH_CACHE_PATH", str(tmp_path / "state.sqlite3"))
         return tmp_path
 
     @pytest.mark.parametrize(
@@ -206,28 +206,26 @@ class TestRunsWithoutNavidrome:
     def test_the_relaxed_loader_records_what_is_missing(self, state):
         config = load_config(require_navidrome=False)
         assert config.has_navidrome is False
-        assert "NAVIDROME_URL" in config.missing_navidrome
+        # Reported as the key you would set, not the variable behind it.
+        assert "url" in config.missing_navidrome
 
     def test_the_strict_loader_still_raises(self, state):
         with pytest.raises(ConfigError):
             load_config()
 
     def test_a_partial_configuration_is_tolerated(self, state, monkeypatch):
-        monkeypatch.setenv("NAVIDROME_URL", "http://example:4533")
+        monkeypatch.setenv("DROPWATCH_URL", "http://example:4533")
         config = load_config(require_navidrome=False)
         assert config.navidrome_url == "http://example:4533"
-        assert config.missing_navidrome == (
-            "NAVIDROME_USERNAME",
-            "NAVIDROME_PASSWORD",
-        )
+        assert config.missing_navidrome == ("username", "password")
 
 
 class TestArgumentHandling:
     @pytest.fixture(autouse=True)
     def _state(self, tmp_path, monkeypatch):
-        for key in ("NAVIDROME_URL", "NAVIDROME_USERNAME", "NAVIDROME_PASSWORD"):
+        for key in ("DROPWATCH_URL", "DROPWATCH_USERNAME", "DROPWATCH_PASSWORD"):
             monkeypatch.delenv(key, raising=False)
-        monkeypatch.setenv("CACHE_PATH", str(tmp_path / "state.sqlite3"))
+        monkeypatch.setenv("DROPWATCH_CACHE_PATH", str(tmp_path / "state.sqlite3"))
 
     def test_nothing_given_is_a_usage_error(self, capsys):
         assert main(["block"]) == ExitCode.USAGE

@@ -13,9 +13,9 @@ from dropwatch.state import MappingTarget, Store
 @pytest.fixture
 def env(tmp_path, monkeypatch):
     """A configured-enough environment with an empty state file."""
-    for key in ("NAVIDROME_URL", "NAVIDROME_USERNAME", "NAVIDROME_PASSWORD"):
+    for key in ("DROPWATCH_URL", "DROPWATCH_USERNAME", "DROPWATCH_PASSWORD"):
         monkeypatch.delenv(key, raising=False)
-    monkeypatch.setenv("CACHE_PATH", str(tmp_path / "state.sqlite3"))
+    monkeypatch.setenv("DROPWATCH_CACHE_PATH", str(tmp_path / "state.sqlite3"))
     return tmp_path / "state.sqlite3"
 
 

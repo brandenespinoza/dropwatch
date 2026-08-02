@@ -32,6 +32,25 @@ from .secrets import Secret
 MAX_ATTEMPTS = 3
 
 
+def prompt_password(label: str = "Password", current: str | None = None, indent: str = "") -> str:
+    """Ask for a password twice, since it is not echoed to be checked.
+
+    Shared with `config password` so the two ways of setting a password behave
+    the same; they used to differ, one confirming and one not.
+    """
+    suffix = " [keep current]" if current else ""
+    while True:
+        value = getpass.getpass(f"{indent}{label}{suffix}: ")
+        if not value:
+            if current:
+                return current
+            print(f"{indent}  A password is required.", file=sys.stderr)
+            continue
+        if value == getpass.getpass(f"{indent}Confirm: "):
+            return value
+        print(f"{indent}  They did not match. Try again.", file=sys.stderr)
+
+
 def _prompt(
     label: str,
     current: str | None = None,
@@ -45,9 +64,7 @@ def _prompt(
     tool never guesses at somebody's hostname.
     """
     if secret:
-        suffix = " [keep current]" if current else ""
-        value = getpass.getpass(f"  {label}{suffix}: ")
-        return value or (current or "")
+        return prompt_password(label, current, indent="  ")
 
     if current:
         suffix = f" [{current}]"
@@ -93,7 +110,7 @@ def run_setup(environ: dict[str, str] | None = None) -> int:
             "setup needs an interactive terminal.",
             hint=(
                 f"Use `{invocation_name()} config set url <value>` in scripts, "
-                "or set NAVIDROME_URL, NAVIDROME_USERNAME and NAVIDROME_PASSWORD "
+                "or set DROPWATCH_URL, DROPWATCH_USERNAME and DROPWATCH_PASSWORD "
                 "in the environment."
             ),
         )

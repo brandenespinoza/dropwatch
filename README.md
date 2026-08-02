@@ -124,10 +124,22 @@ dropwatch config path                    # where the file lives
 not to take effect:
 
 ```text
-url            http://music:4533  (/Users/you/.config/dropwatch/.env)
-username       branden            ($NAVIDROME_URL style: environment)
-password       ********           (/Users/you/.config/dropwatch/.env)
-timeout        20                 (default)
+Settings file: /Users/you/.config/dropwatch/.env
+
+  url            http://music:4533
+  username       branden
+  password       ********
+  timeout        20
+  cache-path     /Users/you/.local/state/dropwatch/state.sqlite3
+  cache-max-age  24
+  types          all
+```
+
+A shell variable shadowing the file is called out where it happens, since that
+is the case worth knowing about:
+
+```text
+  url            http://other:9000  (from $DROPWATCH_URL)
 ```
 
 The password is never accepted as a command-line argument — it would land in
@@ -154,7 +166,7 @@ dropwatch config unset types
 ```
 
 
-`NAVIDROME_URL` is the base URL only — `/rest` is appended for you. Any host,
+`DROPWATCH_URL` is the base URL only — `/rest` is appended for you. Any host,
 port or path works. A hostname on a private network or VPN resolves exactly
 as it would in your browser; this tool never configures networking itself.
 
@@ -241,9 +253,9 @@ Running from a checkout instead? `python3 dropwatch.py` and
 ### Local state
 
 Cached API responses, artist mappings and block lists live in one SQLite file
-at `~/.local/state/dropwatch/state.sqlite3` (override with `CACHE_PATH`). It is
+at `~/.local/state/dropwatch/state.sqlite3` (override with `DROPWATCH_CACHE_PATH`). It is
 an absolute path, so it is shared no matter where you run the command from.
-Cached entries expire after 24 hours by default (`CACHE_MAX_AGE_HOURS`) — but
+Cached entries expire after 24 hours by default (`DROPWATCH_CACHE_MAX_AGE`) — but
 not all of them. An album's metadata and track list cannot change once the
 album is out, so those are kept for 30 days; discography listings and artist
 searches, which exist precisely to change, use the configured lifetime. That is

@@ -11,6 +11,7 @@ import pytest
 from dropwatch.cli import main
 from dropwatch.config import (
     SETTINGS,
+    SETTINGS_BY_KEY,
     describe_settings,
     load_dotenv,
     save_settings,
@@ -31,45 +32,54 @@ def cfg(tmp_path, monkeypatch):
     return directory / ".env"
 
 
+def _file_keys(path) -> set[str]:
+    """Config keys actually present in the settings file."""
+    from dropwatch.config import SETTINGS_BY_ENV, load_dotenv
+    from dropwatch.config import settings_path
+
+    values = load_dotenv(settings_path())
+    return {SETTINGS_BY_ENV[k].key for k in values if k in SETTINGS_BY_ENV}
+
+
 class TestSaveSettings:
     def test_file_is_private(self, tmp_path):
         path = tmp_path / "cfg" / ".env"
-        save_settings(path, {"NAVIDROME_URL": "http://example:4533"})
+        save_settings(path, {"DROPWATCH_URL": "http://example:4533"})
         assert path.stat().st_mode & 0o077 == 0
         assert path.parent.stat().st_mode & 0o077 == 0
 
     def test_roundtrip(self, tmp_path):
         path = tmp_path / ".env"
-        save_settings(path, {"NAVIDROME_URL": "http://example:4533", "RELEASE_TYPES": "album"})
+        save_settings(path, {"DROPWATCH_URL": "http://example:4533", "DROPWATCH_TYPES": "album"})
         values = load_dotenv(path)
-        assert values["NAVIDROME_URL"] == "http://example:4533"
-        assert values["RELEASE_TYPES"] == "album"
+        assert values["DROPWATCH_URL"] == "http://example:4533"
+        assert values["DROPWATCH_TYPES"] == "album"
 
     def test_empty_values_are_omitted(self, tmp_path):
         path = tmp_path / ".env"
-        save_settings(path, {"NAVIDROME_URL": "http://a:1", "RELEASE_TYPES": ""})
-        assert "RELEASE_TYPES" not in load_dotenv(path)
+        save_settings(path, {"DROPWATCH_URL": "http://a:1", "DROPWATCH_TYPES": ""})
+        assert "DROPWATCH_TYPES" not in load_dotenv(path)
 
     def test_hand_added_keys_are_preserved(self, tmp_path):
         path = tmp_path / ".env"
-        path.write_text("NAVIDROME_URL=http://a:1\nMY_OWN_NOTE=keepme\n")
-        save_settings(path, {"NAVIDROME_URL": "http://b:2"})
+        path.write_text("DROPWATCH_URL=http://a:1\nMY_OWN_NOTE=keepme\n")
+        save_settings(path, {"DROPWATCH_URL": "http://b:2"})
         values = load_dotenv(path)
         assert values["MY_OWN_NOTE"] == "keepme"
-        assert values["NAVIDROME_URL"] == "http://b:2"
+        assert values["DROPWATCH_URL"] == "http://b:2"
 
     def test_write_is_atomic(self, tmp_path, monkeypatch):
         # A crash mid-write must not destroy a working config.
         path = tmp_path / ".env"
-        save_settings(path, {"NAVIDROME_URL": "http://good:1"})
+        save_settings(path, {"DROPWATCH_URL": "http://good:1"})
 
         def boom(*args, **kwargs):
             raise RuntimeError("disk full")
 
         monkeypatch.setattr(os, "replace", boom)
         with pytest.raises(RuntimeError):
-            save_settings(path, {"NAVIDROME_URL": "http://bad:2"})
-        assert load_dotenv(path)["NAVIDROME_URL"] == "http://good:1"
+            save_settings(path, {"DROPWATCH_URL": "http://bad:2"})
+        assert load_dotenv(path)["DROPWATCH_URL"] == "http://good:1"
         leftovers = [p for p in path.parent.iterdir() if p.name.startswith(".env.")]
         assert leftovers == [], "temporary files must be cleaned up"
 
@@ -77,27 +87,27 @@ class TestSaveSettings:
 class TestProvenance:
     def test_environment_beats_file(self, tmp_path):
         path = tmp_path / ".env"
-        save_settings(path, {"NAVIDROME_URL": "http://from-file:1"})
-        rows = {r.setting.key: r for r in describe_settings({"DROPWATCH_ENV": str(path), "NAVIDROME_URL": "http://from-env:2"})}
+        save_settings(path, {"DROPWATCH_URL": "http://from-file:1"})
+        rows = {r.setting.key: r for r in describe_settings({"DROPWATCH_ENV": str(path), "DROPWATCH_URL": "http://from-env:2"})}
         assert rows["url"].value == "http://from-env:2"
         assert rows["url"].source == "environment"
 
     def test_file_is_reported_by_path(self, tmp_path):
         path = tmp_path / ".env"
-        save_settings(path, {"NAVIDROME_URL": "http://example:4533"})
+        save_settings(path, {"DROPWATCH_URL": "http://example:4533"})
         rows = {r.setting.key: r for r in describe_settings({"DROPWATCH_ENV": str(path)})}
         assert rows["url"].source == str(path)
 
     def test_unset_optional_falls_back_to_default(self, tmp_path):
         path = tmp_path / ".env"
-        save_settings(path, {"NAVIDROME_URL": "http://example:4533"})
+        save_settings(path, {"DROPWATCH_URL": "http://example:4533"})
         rows = {r.setting.key: r for r in describe_settings({"DROPWATCH_ENV": str(path)})}
         assert rows["timeout"].value == "20"
         assert rows["timeout"].source == "default"
 
     def test_password_is_masked_in_display(self, tmp_path):
         path = tmp_path / ".env"
-        save_settings(path, {"NAVIDROME_PASSWORD": "hunter2-not-real"})
+        save_settings(path, {"DROPWATCH_PASSWORD": "hunter2-not-real"})
         rows = {r.setting.key: r for r in describe_settings({"DROPWATCH_ENV": str(path)})}
         assert rows["password"].display == "********"
         assert "hunter2-not-real" not in rows["password"].display
@@ -135,14 +145,14 @@ class TestConfigCommand:
         main(["config", "set", "username", "branden"])
         main(["config", "set", "types", "album,ep"])
         values = load_dotenv(cfg)
-        assert values["NAVIDROME_URL"] == "http://example:4533"
-        assert values["NAVIDROME_USERNAME"] == "branden"
-        assert values["RELEASE_TYPES"] == "album,ep"
+        assert values["DROPWATCH_URL"] == "http://example:4533"
+        assert values["DROPWATCH_USERNAME"] == "branden"
+        assert values["DROPWATCH_TYPES"] == "album,ep"
 
     def test_unset(self, cfg, capsys):
         main(["config", "set", "types", "album"])
         assert main(["config", "unset", "types"]) == ExitCode.OK
-        assert "RELEASE_TYPES" not in load_dotenv(cfg)
+        assert "DROPWATCH_TYPES" not in load_dotenv(cfg)
 
     def test_list_reports_what_is_missing(self, cfg, capsys):
         main(["config"])
@@ -154,15 +164,16 @@ class TestConfigCommand:
 
     def test_list_warns_when_the_environment_masks_the_file(self, cfg, monkeypatch, capsys):
         main(["config", "set", "url", "example:4533"])
-        monkeypatch.setenv("NAVIDROME_URL", "http://override:9")
+        monkeypatch.setenv("DROPWATCH_URL", "http://override:9")
         capsys.readouterr()
         main(["config"])
         out = capsys.readouterr().out
         assert "http://override:9" in out
-        assert "environment" in out
+        # The column names the variable doing the masking, so it can be unset.
+        assert "$DROPWATCH_URL" in out
 
     def test_set_notes_an_environment_override(self, cfg, monkeypatch, capsys):
-        monkeypatch.setenv("NAVIDROME_URL", "http://override:9")
+        monkeypatch.setenv("DROPWATCH_URL", "http://override:9")
         main(["config", "set", "url", "example:4533"])
         assert "still" in capsys.readouterr().err
 
@@ -262,7 +273,7 @@ class TestPersistedTypeFilter:
         config = load_config(
             environ={
                 "DROPWATCH_CONFIG_DIR": str(cfg.parent),
-                "NAVIDROME_PASSWORD": "not-a-real-password",
+                "DROPWATCH_PASSWORD": "not-a-real-password",
             }
         )
         assert config.release_types == frozenset({"Album", "EP"})
@@ -271,3 +282,88 @@ class TestPersistedTypeFilter:
         from dropwatch.config import SETTINGS
 
         assert "workers" not in {s.key for s in SETTINGS}
+
+
+class TestValidationOnWrite:
+    """A bad value is refused by the command that caused it.
+
+    Every one of these used to be accepted, written to the file, reported as
+    success, and then blow up on some unrelated later command.
+    """
+
+    @pytest.mark.parametrize(
+        "key,value,message",
+        [
+            ("timeout", "abc", "must be a number"),
+            ("timeout", "0", "greater than 0"),
+            ("timeout", "-3", "greater than 0"),
+            ("cache-max-age", "nope", "must be a number"),
+            ("cache-max-age", "-5", "greater than 0"),
+            ("types", "bogus", "Unknown release type"),
+            ("url", "ftp://host", "http or https"),
+            ("url", "http://", "hostname"),
+        ],
+    )
+    def test_rejected_and_nothing_written(self, cfg, capsys, key, value, message):
+        assert main(["config", "set", key, value]) == ExitCode.CONFIG
+        assert message in capsys.readouterr().err
+        assert key not in _file_keys(cfg)
+
+    @pytest.mark.parametrize(
+        "key,given,stored",
+        [
+            ("timeout", "30.0", "30"),
+            ("cache-max-age", "12.50", "12.5"),
+            ("types", "SINGLES, albums", "album,single"),
+            ("url", "example:4533", "http://example:4533"),
+            ("url", "http://example:4533/rest", "http://example:4533"),
+        ],
+    )
+    def test_accepted_values_are_canonicalised(self, cfg, capsys, key, given, stored):
+        assert main(["config", "set", key, given]) == ExitCode.OK
+        rows = {r.setting.key: r for r in describe_settings()}
+        assert rows[key].value == stored
+
+
+class TestUnset:
+    def test_unsetting_a_required_setting_warns(self, cfg, capsys):
+        main(["config", "set", "url", "http://example:4533"])
+        capsys.readouterr()
+        assert main(["config", "unset", "url"]) == ExitCode.OK
+        assert "required" in capsys.readouterr().err
+
+    def test_unsetting_an_optional_one_names_the_default(self, cfg, capsys):
+        main(["config", "set", "timeout", "45"])
+        capsys.readouterr()
+        assert main(["config", "unset", "timeout"]) == ExitCode.OK
+        assert "Back to the default: 20" in capsys.readouterr().out
+
+
+class TestEnvVarNaming:
+    """The variable is derived from the key, so the two can never drift."""
+
+    def test_every_setting_is_namespaced(self):
+        for setting in SETTINGS:
+            assert setting.env_var.startswith("DROPWATCH_")
+
+    def test_the_variable_is_the_key(self):
+        assert SETTINGS_BY_KEY["cache-max-age"].env_var == "DROPWATCH_CACHE_MAX_AGE"
+        assert SETTINGS_BY_KEY["url"].env_var == "DROPWATCH_URL"
+
+    def test_a_generic_shell_variable_cannot_win(self, cfg, monkeypatch):
+        """The bug this prevents: an unrelated CACHE_PATH redirecting state."""
+        monkeypatch.setenv("CACHE_PATH", "/tmp/somebody-elses.db")
+        monkeypatch.setenv("NAVIDROME_PASSWORD", "not-mine")
+        rows = {r.setting.key: r for r in describe_settings()}
+        assert rows["cache-path"].source != "environment"
+        assert rows["password"].source != "environment"
+
+
+class TestDisplay:
+    def test_settings_with_computed_defaults_are_not_shown_as_unset(self, cfg, capsys):
+        main(["config"])
+        out = capsys.readouterr().out
+        # cache-path has no literal default but always has an effective value.
+        assert "cache-path" in out
+        assert "(not set)" not in out.split("cache-path")[1].split("\n")[0]
+        assert "state.sqlite3" in out

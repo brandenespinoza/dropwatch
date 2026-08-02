@@ -220,21 +220,21 @@ against processes running as the user — the realistic threat — while adding 
 subprocess dependency and a second place configuration can hide.
 
 ```text
-NAVIDROME_URL=http://your-server:4533
-NAVIDROME_USERNAME=
-NAVIDROME_PASSWORD=
+DROPWATCH_URL=http://your-server:4533
+DROPWATCH_USERNAME=
+DROPWATCH_PASSWORD=
 ```
 
 Optional, with defaults:
 
 ```text
-REQUEST_TIMEOUT_SECONDS=20
-CACHE_PATH=~/.local/state/dropwatch/state.sqlite3
-CACHE_MAX_AGE_HOURS=24
-RELEASE_TYPES=                   # e.g. album,ep — empty means every type
+DROPWATCH_TIMEOUT=20
+DROPWATCH_CACHE_PATH=~/.local/state/dropwatch/state.sqlite3
+DROPWATCH_CACHE_MAX_AGE=24
+DROPWATCH_TYPES=                   # e.g. album,ep — empty means every type
 ```
 
-`NAVIDROME_URL` is the base URL; `/rest` is appended internally, and a URL that
+`DROPWATCH_URL` is the base URL; `/rest` is appended internally, and a URL that
 already ends in `/rest` is corrected. A bare `host:port` is accepted and assumed
 to be http. URLs carrying credentials, query strings or fragments are rejected.
 No default host is assumed — localhost is never presumed.
@@ -584,7 +584,7 @@ releases, and the last scan's unresolved list.
 Expiry is per key class, not uniform. Album metadata and track lists
 (`album:`, `album_tracks:`) are fixed once a release is published and are kept
 for 30 days; discography listings and artist searches (`discography:`,
-`search:`) exist to change and use `CACHE_MAX_AGE_HOURS` (default 24). A single
+`search:`) exist to change and use `DROPWATCH_CACHE_MAX_AGE` (default 24). A single
 lifetime cannot serve both — short enough to catch new releases means
 re-fetching thousands of immutable records daily. A configured lifetime longer
 than 30 days is respected rather than shortened, and setting it to 0 disables

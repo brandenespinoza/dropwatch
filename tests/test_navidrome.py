@@ -120,7 +120,8 @@ class TestPing:
         fake_http.add("ping.view", {"error": "not found"}, 404)
         with pytest.raises(BadPathError) as excinfo:
             client.ping()
-        assert "NAVIDROME_URL" in (excinfo.value.hint or "")
+        # Hints name the setting you would change, not the variable.
+        assert "url" in (excinfo.value.hint or "")
 
     def test_server_error_is_unexpected_response(self, client, fake_http):
         fake_http.add("ping.view", {}, 503)

@@ -152,7 +152,7 @@ class HttpClient:
         except (TimeoutError, socket.timeout):
             raise ConnectionTimeoutError(
                 f"Timed out after {self.timeout:g}s waiting for {display_url}",
-                hint="Increase REQUEST_TIMEOUT_SECONDS, or check that the host is awake.",
+                hint="Try `dropwatch config set timeout 60`, or check the host is awake.",
             ) from None
         except ssl.SSLError as exc:
             raise TLSError(f"TLS error talking to {display_url}: {exc}") from None
@@ -192,7 +192,7 @@ def _translate_url_error(exc: urllib.error.URLError, safe_url: str):
     if isinstance(reason, ConnectionRefusedError):
         return HostUnreachableError(
             f"Connection refused by {safe_url}.",
-            hint="The host is up but nothing is listening on that port. Check NAVIDROME_URL's port.",
+            hint="The host is up but nothing is listening on that port. Check the url setting.",
         )
     if isinstance(reason, OSError):
         # errno 65/51: no route to host / network unreachable.

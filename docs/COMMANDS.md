@@ -63,19 +63,35 @@ history and in `ps` output. Use `config password`.
 
 ### Settings
 
-| Key | Environment variable | Default | Meaning |
-|---|---|---|---|
-| `url` | `NAVIDROME_URL` | — | Navidrome base URL. Required. A bare `host:port` is assumed to be http. A trailing `/rest` is stripped. |
-| `username` | `NAVIDROME_USERNAME` | — | Navidrome username. Required. |
-| `password` | `NAVIDROME_PASSWORD` | — | Navidrome password. Required. Never echoed. |
-| `timeout` | `REQUEST_TIMEOUT_SECONDS` | `20` | Per-request timeout in seconds. |
-| `cache-path` | `CACHE_PATH` | `~/.local/state/dropwatch/state.sqlite3` | Where local state lives. |
-| `cache-max-age` | `CACHE_MAX_AGE_HOURS` | `24` | Lifetime for volatile cache entries. Album track lists are kept 30 days regardless. |
-| `types` | `RELEASE_TYPES` | all | Release types to report, comma separated: `album`, `ep`, `single`, `unknown`. |
+| Key | Default | Meaning |
+|---|---|---|
+| `url` | — | Navidrome base URL. Required. A bare `host:port` is assumed to be http; a trailing `/rest` is stripped. |
+| `username` | — | Navidrome username. Required. |
+| `password` | — | Navidrome password. Required. Never echoed, never accepted as an argument. |
+| `timeout` | `20` | Per-request timeout in seconds. |
+| `cache-path` | `~/.local/state/dropwatch/state.sqlite3` | Where local state lives. |
+| `cache-max-age` | `24` | Lifetime for volatile cache entries. Album track lists are kept 30 days regardless. |
+| `types` | all | Release types to report, comma separated: `album`, `ep`, `single`, `unknown`. |
+
+Every setting has a matching environment variable, derived from the key with no
+exceptions: `DROPWATCH_` + the key uppercased, `-` becoming `_`. So `timeout` is
+`$DROPWATCH_TIMEOUT` and `cache-max-age` is `$DROPWATCH_CACHE_MAX_AGE`. The
+prefix matters — an unrelated `CACHE_PATH` or `NAVIDROME_PASSWORD` in your shell
+has no effect here.
+
+Values are validated when you set them, not when they are next read:
+
+```bash
+$ dropwatch config set timeout abc
+error: timeout must be a number, got 'abc'
+
+$ dropwatch config set types "SINGLES, albums"
+Set types = album,single  (normalised from 'SINGLES, albums')
+```
 
 Precedence, highest first:
 
-1. A real environment variable (`NAVIDROME_URL`, etc.)
+1. A real environment variable (`DROPWATCH_URL`, etc.)
 2. The settings file — `~/.config/dropwatch/.env`, or `$DROPWATCH_ENV` if set
 
 A value set in your shell environment silently overrides the file. `config`
