@@ -4,37 +4,72 @@ from __future__ import annotations
 
 import pytest
 
-from dropwatch.cli import _insert_default_command, build_parser, main
+from dropwatch.cli import _misplaced_scan_flags, build_parser, main
 from dropwatch.errors import ExitCode
 
 
-class TestDefaultCommand:
+class TestNoSubcommand:
+    """A bare invocation does nothing. Scanning has to be asked for by name."""
+
+    def test_bare_invocation_prints_help_and_succeeds(self, capsys):
+        assert main([]) == ExitCode.OK
+        out = capsys.readouterr().out
+        assert "scan" in out and "usage:" in out
+
+    def test_bare_invocation_touches_nothing(self, capsys, monkeypatch):
+        # No config is set here; a scan would fail on it. Help must not care.
+        for key in ("NAVIDROME_URL", "NAVIDROME_USERNAME", "NAVIDROME_PASSWORD"):
+            monkeypatch.delenv(key, raising=False)
+        assert main([]) == ExitCode.OK
+        assert "error" not in capsys.readouterr().err
+
+    def test_global_flags_alone_still_do_nothing(self, capsys):
+        assert main(["-v"]) == ExitCode.OK
+        assert "usage:" in capsys.readouterr().out
+
+
+class TestMisplacedScanFlags:
+    """`dropwatch --since 2025` used to work; it must say where --since went."""
+
     @pytest.mark.parametrize(
-        "argv,expected_first",
+        "argv,expected",
         [
-            ([], "scan"),
-            (["-v"], "scan"),
-            (["--artist", "Björk"], "scan"),
-            (["--env-file", "x.env"], "scan"),
-            (["--refresh"], "scan"),
-            (["scan"], "scan"),
-            (["check"], "check"),
-            (["status"], "status"),
-            (["fix"], "fix"),
-            (["artists"], "artists"),  # legacy spelling still routes
-            (["map", "Ghost", "42"], "map"),
+            (["--since", "2025"], ["--since"]),
+            (["--since=2025"], ["--since"]),
+            (["--refresh"], ["--refresh"]),
+            (["--type", "album", "--flat"], ["--type", "--flat"]),
+            (["--artist", "Björk"], ["--artist"]),
         ],
     )
-    def test_bare_flags_imply_scan(self, argv, expected_first):
-        assert _insert_default_command(argv)[0] == expected_first
+    def test_detected_before_a_subcommand(self, argv, expected):
+        assert _misplaced_scan_flags(argv) == expected
 
-    def test_help_and_version_are_left_alone(self):
-        assert _insert_default_command(["--help"]) == ["--help"]
-        assert _insert_default_command(["--version"]) == ["--version"]
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            ["scan", "--since", "2025"],   # correct placement
+            ["-v", "status"],
+            ["--env-file", "x.env", "check"],
+            ["status", "--decided"],
+            [],
+            ["--version"],
+        ],
+    )
+    def test_not_flagged_when_placed_correctly(self, argv):
+        assert _misplaced_scan_flags(argv) == []
 
-    def test_env_file_value_is_not_mistaken_for_a_command(self):
-        # "check.env" must not be read as the `check` subcommand.
-        assert _insert_default_command(["--env-file", "check.env"])[0] == "scan"
+    def test_the_error_names_the_flag_and_the_fix(self, capsys):
+        assert main(["--since", "2025"]) == ExitCode.USAGE
+        err = capsys.readouterr().err
+        assert "--since" in err
+        assert "scan --since 2025" in err
+
+    def test_env_file_value_is_not_mistaken_for_a_subcommand(self):
+        # "--env-file check.env" must not read "check.env" as ending the
+        # top-level region early. It is a value, not a subcommand.
+        assert _misplaced_scan_flags(["--env-file", "check.env", "--since", "2025"]) == [
+            "--since"
+        ]
 
 
 class TestParser:

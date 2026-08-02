@@ -48,10 +48,12 @@ class TestLegacySpellings:
     def test_leaves_everything_else_alone(self, argv):
         assert _apply_aliases(argv) == argv
 
-    def test_a_legacy_name_is_not_mistaken_for_a_scan_flag(self):
-        from dropwatch.cli import _insert_default_command
-
-        assert _insert_default_command(["artists"])[0] == "artists"
+    def test_a_legacy_name_reaches_its_replacement(self, env, capsys):
+        # This used to guard against `artists` being rewritten to
+        # ["scan", "artists"]. Nothing implies `scan` any more, so what is
+        # worth checking is that the old name still lands on the new command.
+        assert main(["artists"]) == ExitCode.OK
+        assert "No scan recorded yet" in capsys.readouterr().out
 
 
 class TestStatus:

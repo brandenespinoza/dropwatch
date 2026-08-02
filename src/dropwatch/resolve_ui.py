@@ -157,7 +157,7 @@ def run_resolve(
     else:
         unresolved = store.load_unresolved()
         if not unresolved:
-            print(f"Nothing to resolve. Run `{invocation_name()}` to scan first.")
+            print(f"Nothing to resolve. Run `{invocation_name()} scan` first.")
             return ExitCode.OK
         print(f"{len(unresolved)} unresolved artist(s) from the last scan.")
 

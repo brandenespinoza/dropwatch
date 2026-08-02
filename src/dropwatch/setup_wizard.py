@@ -153,9 +153,9 @@ def run_setup(env_file: Path | None = None, environ: dict[str, str] | None = Non
             print(f"Saved to {target}\n")
             program = invocation_name()
             print("You're ready:")
-            print(f"  {program}                 list missing releases")
-            print(f"  {program} --since 2024    only recent ones")
-            print(f"  {program} config          review these settings")
+            print(f"  {program} scan               list missing releases")
+            print(f"  {program} scan --since 2024  only recent ones")
+            print(f"  {program} config             review these settings")
             return ExitCode.OK
 
         if attempt < MAX_ATTEMPTS:

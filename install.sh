@@ -92,7 +92,7 @@ say ""
 if [ "$ON_PATH" = yes ]; then
     say "Next:"
     say "  dropwatch setup     enter your Navidrome details"
-    say "  dropwatch           list missing releases"
+    say "  dropwatch scan      list missing releases"
 else
     say "$BIN_DIR is not on your PATH. Add it:"
     say ""

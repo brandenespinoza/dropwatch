@@ -100,11 +100,17 @@ skipped when stderr is not a terminal.
 
 ## Command-line interface
 
-A bare invocation runs a scan:
+Every subcommand is named. A bare invocation prints help and does nothing:
+scanning contacts two servers and takes minutes, which is not a reasonable
+thing to start by accident, and the flags shaping a scan belong to it rather
+than to the program as a whole.
 
 ```bash
-dropwatch
+dropwatch scan
 ```
+
+Scan flags given before a subcommand are a usage error naming both the flag and
+the correct form, rather than argparse's bare "unrecognized arguments".
 
 Installed via `pipx install`; see Installation. From a checkout,
 `python3 dropwatch.py` and `python3 -m dropwatch` are equivalent. The
@@ -114,7 +120,7 @@ name.
 
 | Command | Purpose |
 |---|---|
-| *(none)* / `scan` | Scan the library and list missing releases |
+| `scan` | Scan the library and list missing releases |
 | `setup` | Guided setup: collect settings, test the connection, save |
 | `config` | shows every setting and its source; `set`, `unset`, `password`, `path` |
 | `check` | Validate connectivity and credentials, then exit |

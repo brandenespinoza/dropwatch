@@ -1,8 +1,12 @@
 """Command-line interface.
 
-A bare invocation runs a scan. Everything else follows from what a scan leaves
-behind: `status` says what it could not settle, `fix` walks those questions,
-and `map` / `block` answer them directly when you already know the answer.
+`scan` is the operation everything else exists around: `status` says what a
+scan could not settle, `fix` walks those questions, and `map` / `block` answer
+them directly when you already know the answer.
+
+Every subcommand must be named. A bare invocation prints help and does
+nothing — scanning talks to two servers and takes minutes, which is not a
+reasonable thing to start by accident.
 """
 
 from __future__ import annotations
@@ -101,9 +105,8 @@ def build_parser() -> argparse.ArgumentParser:
             "and you appear not to own."
         ),
         epilog=(
-            "Run with no arguments to perform a normal scan. Configuration is read "
-            "from the environment, then ./.env, then ~/.config/dropwatch/.env. "
-            "Run `dropwatch setup` to configure it."
+            "Start with `dropwatch setup`, then `dropwatch scan`. Configuration is "
+            "read from the environment, then ./.env, then ~/.config/dropwatch/.env."
         ),
     )
     parser.add_argument("--version", action="version", version=f"dropwatch {__version__}")
@@ -299,8 +302,15 @@ def _parse_since(text: str) -> ReleaseDate:
     return parsed
 
 
-#: Options that consume the following token, so it is not mistaken for a command.
-_VALUE_FLAGS = {"--env-file", "--artist", "--limit", "--since", "--type"}
+#: Flags that belong to `scan` and nothing else. Used only to recognise the
+#: old bare-invocation habit and say where they moved to.
+SCAN_FLAGS = {
+    "--artist", "--limit", "--since", "--type", "--refresh", "--flat",
+    "--no-progress",
+}
+
+#: Flags that consume the next token, so it is a value rather than a subcommand.
+VALUE_FLAGS = {"--env-file", "--artist", "--limit", "--since", "--type"}
 
 
 def _apply_aliases(argv: list[str]) -> list[str]:
@@ -327,22 +337,27 @@ def _apply_aliases(argv: list[str]) -> list[str]:
     return ["fix", *rest]
 
 
-def _insert_default_command(argv: list[str]) -> list[str]:
-    """Make a bare invocation, or one with only flags, mean `scan`."""
+def _misplaced_scan_flags(argv: list[str]) -> list[str]:
+    """Scan flags given before any subcommand, in the order they appear.
+
+    A bare invocation used to mean `scan`, so `dropwatch --since 2025` ran one.
+    It no longer does, and argparse alone would answer "unrecognized arguments:
+    --since 2025", which omits the one thing worth saying.
+    """
+    found: list[str] = []
     skip_next = False
     for token in argv:
         if skip_next:
             skip_next = False
-            continue
-        if token in ("-h", "--help", "--version"):
-            return argv
-        if token.startswith("-"):
-            if token in _VALUE_FLAGS:
-                skip_next = True
-            continue
-        known = SUBCOMMANDS | LEGACY_COMMANDS
-        return argv if token in known else ["scan", *argv]
-    return ["scan", *argv]
+            continue  # a flag's value, not a subcommand
+        if not token.startswith("-"):
+            break  # a subcommand ends the top-level region
+        name, joined, _ = token.partition("=")
+        if name in SCAN_FLAGS and name not in found:
+            found.append(name)
+        if not joined and name in VALUE_FLAGS:
+            skip_next = True
+    return found
 
 
 def _make_clients(config: Config, store: Store, refresh: bool):
@@ -364,13 +379,31 @@ def _make_clients(config: Config, store: Store, refresh: bool):
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     parser = build_parser()
-    args = parser.parse_args(_insert_default_command(_apply_aliases(argv)))
+
+    stray = _misplaced_scan_flags(argv)
+    if stray:
+        program = invocation_name()
+        verb = "belongs" if len(stray) == 1 else "belong"
+        print(
+            f"error: {', '.join(stray)} {verb} to `{program} scan`.",
+            file=sys.stderr,
+        )
+        print(f"  Try: {program} scan {' '.join(argv)}", file=sys.stderr)
+        return ExitCode.USAGE
+
+    args = parser.parse_args(_apply_aliases(argv))
     # Restore the defaults that SUPPRESS omitted.
     args.verbose = getattr(args, "verbose", 0)
     args.env_file = getattr(args, "env_file", None)
     setup_logging(args.verbose)
 
-    command = args.command or "scan"
+    if args.command is None:
+        # No subcommand does nothing but explain itself. Scanning is a slow,
+        # network-heavy operation and should be asked for by name.
+        parser.print_help()
+        return ExitCode.OK
+
+    command = args.command
     try:
         if command == "scan":
             return cmd_scan(args)
@@ -653,7 +686,7 @@ def cmd_fix(args) -> int:
         artists_pending = store.load_unresolved()
         releases_pending = store.load_review()
         if not artists_pending and not releases_pending:
-            print(f"Nothing to fix. Run `{invocation_name()}` to scan first.")
+            print(f"Nothing to fix. Run `{invocation_name()} scan` first.")
             return ExitCode.OK
 
         code = ExitCode.OK
@@ -700,7 +733,7 @@ def cmd_status(args) -> int:
     elif mappings or decisions:
         print("Nothing pending.")
     else:
-        print(f"No scan recorded yet. Run `{program}`.")
+        print(f"No scan recorded yet. Run `{program} scan`.")
         return ExitCode.OK
 
     if mappings or decisions:

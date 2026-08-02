@@ -2,9 +2,9 @@
 
 Every command, flag and setting in `dropwatch`.
 
-Running the command with no subcommand means `scan`, so `dropwatch`,
-`dropwatch --since 2024` and `dropwatch scan --since 2024` are the same
-thing.
+Every subcommand is named explicitly. A bare `dropwatch` prints this list
+and does nothing — scanning talks to two servers and takes minutes, so it
+is asked for by name: `dropwatch scan`.
 
 ---
 
@@ -17,9 +17,9 @@ thing.
 | Change one setting | `dropwatch config set <key> <value>` |
 | Change the password | `dropwatch config password` |
 | Confirm Navidrome is reachable | `dropwatch check` |
-| List releases I don't own | `dropwatch` |
-| List only recent ones | `dropwatch --since 2024-01` |
-| List only albums | `dropwatch --type album` |
+| List releases I don't own | `dropwatch scan` |
+| List only recent ones | `dropwatch scan --since 2024-01` |
+| List only albums | `dropwatch scan --type album` |
 | **See what needs my attention** | `dropwatch status` |
 | **Answer it** | `dropwatch fix` |
 | See what I've already decided | `dropwatch status --decided` |
@@ -27,7 +27,7 @@ thing.
 | Never report an artist again | `dropwatch block --artist "<artist>"` |
 | Dismiss one release from the results | `dropwatch block --album <url>` |
 | Undo a block | `dropwatch unblock --artist \|--album <x>` |
-| Force fresh data from Deezer | `dropwatch --refresh` |
+| Force fresh data from Deezer | `dropwatch scan --refresh` |
 
 ---
 
@@ -99,10 +99,10 @@ of visible album artists, then exits. No Deezer traffic, no state written.
 ### `scan`
 
 ```bash
-dropwatch                             # the whole library
-dropwatch --since 2024-06-01          # only releases on or after this date
-dropwatch --artist "Björk" --artist "Ghost"
-dropwatch --limit 20 --type album
+dropwatch scan                             # the whole library
+dropwatch scan --since 2024-06-01          # only releases on or after this date
+dropwatch scan --artist "Björk" --artist "Ghost"
+dropwatch scan --limit 20 --type album
 ```
 
 | Flag | Effect |

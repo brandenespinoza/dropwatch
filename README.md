@@ -65,7 +65,7 @@ Then:
 
 ```bash
 dropwatch setup     # enter your Navidrome details; it tests the connection
-dropwatch           # list missing releases
+dropwatch scan      # list missing releases
 ```
 
 Re-run `./install.sh` any time to upgrade in place. To remove it:
@@ -194,24 +194,24 @@ Network failures and credential failures are never conflated.
 ## Running a scan
 
 ```bash
-dropwatch
+dropwatch scan
 ```
 
 That is the whole normal workflow. Results go to stdout; warnings, unresolved
-artists and the review section go to stderr, so `dropwatch > missing.txt`
+artists and the review section go to stderr, so `dropwatch scan > missing.txt`
 gives you a clean file.
 
 Useful flags:
 
 ```bash
-dropwatch --since 2024            # a year...
-dropwatch --since 2026-06         # ...a month...
-dropwatch --since 2026-06-15      # ...or an exact date
-dropwatch --type album --type ep  # skip singles
-dropwatch --artist "Björk"        # one artist
-dropwatch --flat                  # no type groups, pure date order
-dropwatch --refresh               # ignore the cache, refetch
-dropwatch -v                      # progress detail on stderr
+dropwatch scan --since 2024            # a year...
+dropwatch scan --since 2026-06         # ...a month...
+dropwatch scan --since 2026-06-15      # ...or an exact date
+dropwatch scan --type album --type ep  # skip singles
+dropwatch scan --artist "Björk"        # one artist
+dropwatch scan --flat                  # no type groups, pure date order
+dropwatch scan --refresh               # ignore the cache, refetch
+dropwatch scan -v                      # progress detail on stderr
 ```
 
 Each result line ends with the release's Deezer URL, so the output composes with
@@ -228,7 +228,7 @@ While a scan runs, findings appear on stderr as each artist is resolved:
 
 Artists with nothing new stay off the scroll, so the list stays dense. These are
 summaries, not the report — the sorted table still arrives at the end, on
-stdout. Nothing about the live view touches stdout, so `dropwatch > out.txt`
+stdout. Nothing about the live view touches stdout, so `dropwatch scan > out.txt`
 is unaffected. `--no-progress` turns it off, and it is skipped automatically
 when stderr is not a terminal.
 
@@ -453,7 +453,7 @@ line stays self-describing when the output is piped somewhere.
 For one continuous list sorted purely by date, with no group headings:
 
 ```bash
-dropwatch --flat
+dropwatch scan --flat
 ```
 
 Deezer sometimes gives partial dates (`2019-00-00`), so precision is tracked and
