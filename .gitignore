@@ -1,0 +1,26 @@
+# Secrets — never commit
+.env
+.env.*
+*.secret
+
+# Local state and cache
+*.sqlite3
+*.sqlite3-journal
+.dropwatch/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# macOS
+.DS_Store
