@@ -8,7 +8,7 @@ This document describes the product **as built**. Sections that were open
 questions in the original brief now record the decision that was made and why.
 Constraints marked as invariants still hold and must survive future changes.
 
-Status: complete and working. 613 automated tests, no runtime dependencies.
+Status: complete and working. 622 automated tests, no runtime dependencies.
 
 ## Core behavior
 
@@ -622,6 +622,16 @@ exactly one argument regardless of its content, and no shell is involved.
 **(Invariant.)** A hand-edited or exported bad value fails `rip` alone, never
 `scan`.
 
+The walk is ordered as the report is: by type — albums, EPs, singles,
+unclassified — and newest first within each group, imprecise dates below the
+fully dated releases they overlap. Type outranks date, so the most recent single
+still follows the oldest album: the expensive, wanted material is offered first
+and a walk abandoned halfway leaves behind the smaller and older releases.
+Ordering is applied when the queue is read, not when it is written, because a
+filtered scan merges retained entries with fresh ones and would otherwise undo
+it. The type sequence is taken from the report's own `GROUP_ORDER` rather than
+restated, so the two cannot disagree. **(Invariant.)**
+
 Interaction: per release, `r` runs, `s` or Enter skips, `a` runs the rest
 unprompted, `q` stops. Enter skips rather than runs, because a held key must not
 start a queue of downloads. Releases run sequentially with the command's stdio
@@ -748,7 +758,7 @@ tree calls `subprocess`, and that is worth keeping true.
 
 ## Testing
 
-`python3 -m pytest` — 613 tests, no network access, no real credentials, both
+`python3 -m pytest` — 622 tests, no network access, no real credentials, both
 APIs mocked. **(Invariant: normal tests never contact the live services, and
 never execute a downloader.)**
 

@@ -24,10 +24,40 @@ import sys
 
 from .config import URL_PLACEHOLDER, invocation_name
 from .errors import ConfigError, ExitCode
+from .models import ReleaseDate
+from .report import GROUP_ORDER
 
 #: Returned by `run_one` when the command could not be started at all, as
 #: distinct from a command that ran and failed.
 NOT_RUN = -1
+
+#: Type order, taken from the report rather than restated, so the walk and the
+#: printed table can never disagree about what comes first.
+_TYPE_RANK = {release_type.value: rank for rank, release_type in enumerate(GROUP_ORDER)}
+
+
+def order_queue(entries: list[dict]) -> list[dict]:
+    """Albums, then EPs, then singles, newest first within each group.
+
+    The stored queue is in scan order — artists alphabetically, discography
+    order within each — which is the order the work happened in, not an order
+    anyone wants to download in. Sorting happens here rather than when the
+    queue is written because a filtered scan merges old entries with new ones
+    and would undo it: read time is the only place the order is guaranteed.
+
+    Mirrors the report's ordering, so the walk arrives in the same sequence the
+    table printed.
+    """
+
+    def key(entry: dict):
+        rank = _TYPE_RANK.get(entry.get("type") or "", len(GROUP_ORDER))
+        # Negated for descending: the components are non-negative ints, and an
+        # unknown date is all zeros, so it sinks below every real date.
+        date = tuple(-n for n in ReleaseDate.parse(entry.get("date")).sort_key)
+        return (rank, date, (entry.get("artist") or "").casefold(),
+                (entry.get("title") or "").casefold())
+
+    return sorted(entries, key=key)
 
 
 def build_command(template: str, url: str) -> list[str]:
@@ -110,7 +140,7 @@ def _preflight(command: list[str]) -> str | None:
 
 def run_rip(store, config) -> int:
     """Walk the last scan's missing releases, ripping the chosen ones."""
-    entries = store.load_missing()
+    entries = order_queue(store.load_missing())
     if not entries:
         print("Nothing to rip. Run a scan first.")
         return ExitCode.OK

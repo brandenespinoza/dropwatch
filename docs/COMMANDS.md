@@ -185,6 +185,10 @@ Releases run one at a time with the command's output passed through, so its
 progress display works normally. A release that fails does not stop the walk;
 Ctrl-C abandons the current download and returns to the prompt.
 
+Order matches the report: albums, then EPs, then singles, then unclassified,
+newest first within each group. Less precise dates fall below the fully dated
+releases they overlap and undated ones come last, exactly as they print.
+
 **DropWatch downloads nothing itself.** It runs the command you configured, as
 a separate process, and knows nothing about it beyond the command line. The
 default names [streamrip](https://github.com/nathom/streamrip), which you have

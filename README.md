@@ -460,6 +460,13 @@ downloader's output passed straight through, so its progress bars work and you
 see a failure when it happens. One failed release does not stop the walk, and
 Ctrl-C abandons the download in progress and returns you to the prompt.
 
+You are asked in the same order the results printed: **albums first, then EPs,
+then singles**, and newest first within each. So the full-length records arrive
+before the singles, and this year's before the back catalogue — you can work
+down until you have had enough and quit knowing what you skipped was the
+smaller, older material. Imprecise dates fall below the fully dated releases
+they overlap, and undated ones sit at the end of their group.
+
 **DropWatch does not download anything itself.** It runs whatever
 `rip-command` names, in a separate process. The default targets
 [streamrip](https://github.com/nathom/streamrip):
@@ -650,7 +657,7 @@ artist never stops the rest of the scan.
 python3 -m pytest        # or: python3 -m pytest -q
 ```
 
-613 tests, no network access, no real credentials, both APIs mocked, and no
+622 tests, no network access, no real credentials, both APIs mocked, and no
 downloader ever executed. They cover
 name and title normalization, edition versus version markers, deluxe/expanded/
 remaster matching, track overlap, the singles rules, alternate-version

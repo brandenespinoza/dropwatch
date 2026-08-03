@@ -18,7 +18,7 @@ from dropwatch.config import (
 )
 from dropwatch.errors import ConfigError, ExitCode
 from dropwatch.models import Ownership
-from dropwatch.rip_ui import NOT_RUN, build_command, run_rip
+from dropwatch.rip_ui import NOT_RUN, build_command, order_queue, run_rip
 from dropwatch.secrets import Secret
 
 ALBUM_URL = "https://www.deezer.com/album/302127"
@@ -169,6 +169,89 @@ class TestQueue:
             s.save_missing([{"id": "1", "artist": "A", "title": "T"}])
             assert s.get("__missing__") is None  # expired as a cache read
             assert len(s.load_missing()) == 1  # but still readable as a report
+
+
+class TestOrder:
+    """Albums, then EPs, then singles; newest first inside each group."""
+
+    def entry(self, id_, type_, date, artist="A", title="T"):
+        return {"id": str(id_), "artist": artist, "title": title,
+                "type": type_, "date": date, "url": f"u{id_}"}
+
+    def test_types_group_in_report_order(self):
+        ordered = order_queue([
+            self.entry(1, "Single", "2024-01-01"),
+            self.entry(2, "Album", "2024-01-01"),
+            self.entry(3, "Unknown", "2024-01-01"),
+            self.entry(4, "EP", "2024-01-01"),
+        ])
+        assert [e["type"] for e in ordered] == ["Album", "EP", "Single", "Unknown"]
+
+    def test_newest_first_within_a_group(self):
+        ordered = order_queue([
+            self.entry(1, "Album", "2020-05-01"),
+            self.entry(2, "Album", "2026-01-15"),
+            self.entry(3, "Album", "2023-11-30"),
+        ])
+        assert [e["date"] for e in ordered] == ["2026-01-15", "2023-11-30", "2020-05-01"]
+
+    def test_date_never_outranks_type(self):
+        """A brand-new single still comes after every album."""
+        ordered = order_queue([
+            self.entry(1, "Single", "2026-08-01"),
+            self.entry(2, "Album", "1975-02-04"),
+        ])
+        assert [e["type"] for e in ordered] == ["Album", "Single"]
+
+    def test_imprecise_dates_fall_below_full_ones(self):
+        ordered = order_queue([
+            self.entry(1, "Album", "2024"),
+            self.entry(2, "Album", "2024-06-15"),
+            self.entry(3, "Album", "2024-06"),
+        ])
+        assert [e["date"] for e in ordered] == ["2024-06-15", "2024-06", "2024"]
+
+    def test_unknown_dates_sink_to_the_bottom_of_their_group(self):
+        ordered = order_queue([
+            self.entry(1, "Album", "unknown"),
+            self.entry(2, "Album", "1999-01-01"),
+            self.entry(3, "EP", "2026-01-01"),
+        ])
+        assert [(e["type"], e["date"]) for e in ordered] == [
+            ("Album", "1999-01-01"), ("Album", "unknown"), ("EP", "2026-01-01"),
+        ]
+
+    def test_ties_break_by_artist_then_title(self):
+        ordered = order_queue([
+            self.entry(1, "Album", "2024-01-01", artist="Zebra", title="A"),
+            self.entry(2, "Album", "2024-01-01", artist="Alpha", title="Z"),
+            self.entry(3, "Album", "2024-01-01", artist="Alpha", title="B"),
+        ])
+        assert [(e["artist"], e["title"]) for e in ordered] == [
+            ("Alpha", "B"), ("Alpha", "Z"), ("Zebra", "A"),
+        ]
+
+    def test_an_unrecognised_type_sorts_last_rather_than_crashing(self):
+        ordered = order_queue([
+            self.entry(1, "Mixtape", "2026-01-01"),
+            self.entry(2, "Album", "1999-01-01"),
+        ])
+        assert [e["type"] for e in ordered] == ["Album", "Mixtape"]
+
+    def test_missing_fields_do_not_crash(self):
+        assert len(order_queue([{"id": "1"}, {"id": "2", "type": "Album"}])) == 2
+
+    def test_the_walk_uses_it(self, store, rip_config, runner, monkeypatch):
+        """The stored order is scan order; the walk must not inherit it."""
+        store.save_missing([
+            {"id": "1", "artist": "Aardvark", "title": "Old Single",
+             "type": "Single", "date": "2020-01-01", "url": "u1"},
+            {"id": "2", "artist": "Zebra", "title": "New Album",
+             "type": "Album", "date": "2026-07-01", "url": "u2"},
+        ])
+        drive(monkeypatch, ["a"])
+        run_rip(store, rip_config)
+        assert [c[-1] for c in runner.calls] == ["u2", "u1"]
 
 
 class TestWalk:
