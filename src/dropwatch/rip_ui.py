@@ -1,0 +1,207 @@
+"""Handing releases from the last scan to an external downloader.
+
+DropWatch does not download anything and does not know how. It prints a Deezer
+URL and runs whatever command you configured against it; the default targets
+streamrip (``rip url <url>``), but the setting is a template, so any tool that
+takes a URL works, as does a script of your own.
+
+The subprocess boundary is deliberate rather than a shortcut. Credentials for
+the download service stay in that tool's own configuration and never reach
+this one, a crash there cannot take this process's state with it, and
+switching downloaders is a settings change instead of a code change.
+
+Nothing here writes to the store. Ripping a release is not a claim that you
+own it — the files land on disk, Navidrome indexes them on its own schedule,
+and the next scan sees them the same way it sees everything else.
+"""
+
+from __future__ import annotations
+
+import shlex
+import shutil
+import subprocess
+import sys
+
+from .config import URL_PLACEHOLDER, invocation_name
+from .errors import ConfigError, ExitCode
+
+#: Returned by `run_one` when the command could not be started at all, as
+#: distinct from a command that ran and failed.
+NOT_RUN = -1
+
+
+def build_command(template: str, url: str) -> list[str]:
+    """Split the template into argv, then substitute the URL into the tokens.
+
+    Order matters. Substituting into the string first and splitting afterwards
+    would let a URL containing a space or a quote become extra arguments;
+    splitting first means the URL lands as exactly one argv entry whatever it
+    contains. Nothing is passed through a shell.
+    """
+    try:
+        parts = shlex.split(template)
+    except ValueError as exc:
+        raise ConfigError(
+            f"rip-command is not a valid command line: {exc}",
+            hint=f"Check for an unbalanced quote: {template!r}",
+        ) from None
+    if not parts:
+        raise ConfigError(
+            "rip-command is empty.",
+            hint=f'Set one: `{invocation_name()} config set rip-command "rip url {URL_PLACEHOLDER}"`',
+        )
+    if URL_PLACEHOLDER not in template:
+        raise ConfigError(
+            f"rip-command does not contain {URL_PLACEHOLDER}, so it would ignore the release.",
+            hint=f'For example: "rip url {URL_PLACEHOLDER}"',
+        )
+    return [part.replace(URL_PLACEHOLDER, url) for part in parts]
+
+
+def _label(entry: dict) -> str:
+    artist = entry.get("artist") or ""
+    title = entry.get("title") or f"Deezer release {entry.get('id', '')}"
+    return f"{artist} — {title}" if artist else title
+
+
+def _show(entry: dict, position: int, total: int) -> None:
+    print(f"\n─── {position}/{total} ───")
+    print(_label(entry))
+    details = ", ".join(p for p in (entry.get("type"), entry.get("date")) if p)
+    if details:
+        print(f"  {details}")
+    # "probably missing" is worth surfacing here: it is the matcher saying it
+    # could not fully rule out that you already have this.
+    if entry.get("ownership") == "probably_missing":
+        print("  probably missing — not certain you lack this")
+    if entry.get("url"):
+        print(f"  {entry['url']}")
+
+
+def run_one(command: list[str]) -> int:
+    """Run the downloader for one release, letting its output through.
+
+    Output is inherited rather than captured so progress bars and prompts from
+    the downloader behave normally. Returns its exit status, or NOT_RUN when
+    the command could not be started.
+    """
+    print(f"\n  $ {shlex.join(command)}\n", flush=True)
+    try:
+        return subprocess.run(command).returncode
+    except FileNotFoundError:
+        print(f"  error: {command[0]} is not installed or not on PATH.", file=sys.stderr)
+        return NOT_RUN
+    except PermissionError:
+        print(f"  error: {command[0]} is not executable.", file=sys.stderr)
+        return NOT_RUN
+    except KeyboardInterrupt:
+        # Ctrl-C reached the child too. Abandoning one download should return
+        # to the prompt, not end the whole session.
+        print("\n  interrupted; that release was not finished.", file=sys.stderr)
+        return NOT_RUN
+
+
+def _preflight(command: list[str]) -> str | None:
+    """Complain before the walk, not after 40 prompts. Returns an error hint."""
+    if shutil.which(command[0]) is None:
+        return command[0]
+    return None
+
+
+def run_rip(store, config) -> int:
+    """Walk the last scan's missing releases, ripping the chosen ones."""
+    entries = store.load_missing()
+    if not entries:
+        print("Nothing to rip. Run a scan first.")
+        return ExitCode.OK
+
+    if not sys.stdin.isatty():
+        print("error: rip needs an interactive terminal.", file=sys.stderr)
+        print(
+            f"  It asks about each release before running `{config.rip_command}`.",
+            file=sys.stderr,
+        )
+        return ExitCode.CONFIG
+
+    # Built once: the template is a setting, so a broken one is broken for
+    # every release and should be reported before anything is asked.
+    probe = build_command(config.rip_command, "https://www.deezer.com/album/0")
+    missing_binary = _preflight(probe)
+    if missing_binary:
+        print(f"error: {missing_binary} is not installed or not on PATH.", file=sys.stderr)
+        print(
+            f"  Install it, or point somewhere else: "
+            f"`{invocation_name()} config set rip-command \"...\"`",
+            file=sys.stderr,
+        )
+        return ExitCode.CONFIG
+
+    total = len(entries)
+    print(f"{total} release(s) from the last scan.")
+    print("Press Enter to skip one.")
+
+    ripped = failed = 0
+    rip_everything = False
+
+    for position, entry in enumerate(entries, start=1):
+        url = entry.get("url") or f"https://www.deezer.com/album/{entry.get('id', '')}"
+        _show(entry, position, total)
+
+        if not rip_everything:
+            answer = _ask()
+            if answer == "quit":
+                break
+            if answer == "skip":
+                continue
+            if answer == "all":
+                rip_everything = True
+
+        status = run_one(build_command(config.rip_command, url))
+        if status == 0:
+            ripped += 1
+            print("  ✓ done")
+        else:
+            failed += 1
+            if status != NOT_RUN:
+                print(f"  ✗ exited {status}", file=sys.stderr)
+
+    _report(ripped, failed)
+    return ExitCode.OK
+
+
+def _ask() -> str:
+    """Prompt for one release. Returns "rip", "all", "skip" or "quit"."""
+    while True:
+        print("  [r] rip   [s]kip   [a]ll remaining   [q]uit")
+        try:
+            answer = input("  > ").strip().lower()
+        except EOFError:
+            return "quit"
+
+        if answer in ("q", "quit"):
+            return "quit"
+        # Enter skips. Starting a download is never the thing that happens
+        # when you are holding the key down to get through the list.
+        if answer == "" or answer in ("s", "skip"):
+            return "skip"
+        if answer in ("r", "rip"):
+            return "rip"
+        if answer in ("a", "all"):
+            return "all"
+        print("  Enter r, s, a or q.")
+
+
+def _report(ripped: int, failed: int) -> None:
+    if not ripped and not failed:
+        print("\nNothing ripped.")
+        return
+    parts = [f"{ripped} ripped"]
+    if failed:
+        parts.append(f"{failed} failed")
+    print(f"\n{', '.join(parts)}.")
+    if ripped:
+        # Said plainly because the alternative is assuming a scan is now wrong.
+        print(
+            "These stay in the results until Navidrome indexes the files and "
+            "you scan again."
+        )

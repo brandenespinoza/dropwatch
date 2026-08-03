@@ -311,6 +311,18 @@ class Scanner:
         self._clear_progress(options)
 
         result.missing = dedupe_results(result.missing, lambda item: item.release_type)
+        fresh_missing = [
+            {
+                "id": item.release.id,
+                "artist": item.local_artist,
+                "title": item.release.title,
+                "type": item.release_type.value,
+                "date": str(item.release.release_date),
+                "ownership": item.ownership.value,
+                "url": item.release.link,
+            }
+            for item in result.missing
+        ]
         fresh_review = [
             {
                 "id": item.release.id,
@@ -334,6 +346,11 @@ class Scanner:
             }
             for u in result.unresolved
         ]
+        self.store.save_missing(
+            _merge_queue(
+                self.store.load_missing(), fresh_missing, result.scanned_names, "artist"
+            )
+        )
         self.store.save_review(
             _merge_queue(self.store.load_review(), fresh_review, result.scanned_names, "artist")
         )

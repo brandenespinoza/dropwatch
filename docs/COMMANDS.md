@@ -28,6 +28,7 @@ is asked for by name: `dropwatch scan`.
 | Dismiss one release from the results | `dropwatch block --album <url>` |
 | Undo a block | `dropwatch unblock --artist \|--album <x>` |
 | Force fresh data from Deezer | `dropwatch scan --refresh` |
+| Download the ones I want | `dropwatch rip` |
 
 ---
 
@@ -73,6 +74,7 @@ history and in `ps` output. Use `config password`.
 | `cache-max-age` | `24` | Lifetime for volatile cache entries. Album track lists are kept 30 days regardless. |
 | `types` | all | Release types to report, comma separated: `album`, `ep`, `single`, `unknown`. |
 | `favorites` | `false` | Scan only artists starred in Navidrome. |
+| `rip-command` | `rip url {url}` | Command `rip` runs per chosen release. `{url}` is replaced with the Deezer URL. |
 
 Every setting has a matching environment variable, derived from the key with no
 exceptions: `DROPWATCH_` + the key uppercased, `-` becoming `_`. So `timeout` is
@@ -156,6 +158,54 @@ terminal.
 
 Interrupting with Ctrl-C is safe. Everything already fetched stays cached, so a
 re-run resumes cheaply.
+
+---
+
+## Downloading
+
+### `rip`
+
+```bash
+dropwatch rip
+```
+
+Walks the releases the last scan reported as missing and runs the `rip-command`
+setting against the ones you pick. Needs a terminal. Talks to neither Navidrome
+nor Deezer — the queue is local, written by the last scan, and it survives until
+the next one replaces it.
+
+| Answer | Effect |
+|---|---|
+| `r` | Run the command for this release |
+| Enter, or `s` | Skip it |
+| `a` | Run it and every remaining release without asking again |
+| `q` | Stop |
+
+Releases run one at a time with the command's output passed through, so its
+progress display works normally. A release that fails does not stop the walk;
+Ctrl-C abandons the current download and returns to the prompt.
+
+**DropWatch downloads nothing itself.** It runs the command you configured, as
+a separate process, and knows nothing about it beyond the command line. The
+default names [streamrip](https://github.com/nathom/streamrip), which you have
+to install and configure separately; any tool or script taking a URL works.
+
+```bash
+dropwatch config set rip-command "rip url {url}"                 # the default
+dropwatch config set rip-command "rip url {url} --quality 2"
+dropwatch config set rip-command "~/bin/queue-it.sh {url}"
+```
+
+`{url}` may appear anywhere in the template. It is validated when set, split
+into arguments without a shell, and substituted after the split so the URL is
+always one argument.
+
+Ripping records nothing in local state — a download is not a claim of
+ownership. The release keeps appearing until Navidrome indexes the files and
+you scan again. To drop it sooner, use `dropwatch fix --album <id> --own`.
+
+If the command is missing from your `PATH`, `rip` says so before asking about
+anything rather than after.
 
 ---
 
@@ -343,7 +393,11 @@ titles you already own — but works without.
 
 Everything else reads and writes the local state file, or talks to Deezer, whose
 public API needs no credentials at all: `status`, `cache`, `block`, `unblock`,
-`map`, `unmap`, and `config`.
+`map`, `unmap`, `rip`, and `config`.
+
+`rip` is the only command that runs another program, and it is the one you
+named in `rip-command`. Its credentials, if it needs any, are its own business
+and never pass through here.
 
 ---
 

@@ -486,6 +486,26 @@ class Store:
         except ValueError:
             return []
 
+    # --- missing releases (persisted for the `rip` command) ----------------
+
+    def save_missing(self, entries: list[dict]) -> None:
+        self.set("__missing__", entries)
+
+    def load_missing(self) -> list[dict]:
+        # Like the other report queues, this is what the last scan concluded
+        # rather than a cache entry, so it does not expire: ripping the day
+        # after a scan still works.
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT payload FROM cache WHERE key = ?", ("__missing__",)
+            ).fetchone()
+        if row is None:
+            return []
+        try:
+            return json.loads(row["payload"])
+        except ValueError:
+            return []
+
     # --- unresolved artists (persisted for the `artists` command) ----------
 
     def save_unresolved(self, entries: list[dict]) -> None:

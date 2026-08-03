@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 import stat
 import sys
 import tempfile
@@ -108,6 +109,41 @@ def is_true(value: str | None) -> bool:
     return (value or "").strip().casefold() in _TRUTHY
 
 
+#: What `rip-command` substitutes the release URL for. A placeholder rather
+#: than a trailing argument because a downloader may want flags after the URL.
+URL_PLACEHOLDER = "{url}"
+
+#: streamrip's invocation. Only a default: any command taking a URL works.
+DEFAULT_RIP_COMMAND = f"rip url {URL_PLACEHOLDER}"
+
+
+def _check_command(value: str, key: str) -> str:
+    """Accept a command template that can actually be run later.
+
+    Validating here means a typo is rejected by `config set`, where the fix is
+    obvious, rather than after a scan when you are looking at 40 releases and
+    wanting to download them.
+    """
+    text = value.strip()
+    if not text:
+        raise ConfigError(f"{key} cannot be empty.")
+    if URL_PLACEHOLDER not in text:
+        raise ConfigError(
+            f"{key} must contain {URL_PLACEHOLDER}, got {value!r}",
+            hint=f'For example: "{DEFAULT_RIP_COMMAND}"',
+        )
+    try:
+        parts = shlex.split(text)
+    except ValueError as exc:
+        raise ConfigError(
+            f"{key} is not a valid command line: {exc}",
+            hint="Check for an unbalanced quote.",
+        ) from None
+    if not parts:
+        raise ConfigError(f"{key} cannot be empty.")
+    return text
+
+
 def _check_path(value: str, key: str) -> str:
     """Accept a writable-looking path, stored absolute."""
     path = Path(value).expanduser()
@@ -182,6 +218,8 @@ SETTINGS: tuple[Setting, ...] = (
             check=lambda v, _k: ",".join(sorted(parse_release_types(v))).lower()),
     Setting("favorites", "Scan only artists starred in Navidrome",
             default="false", check=_check_boolean),
+    Setting("rip-command", f"Command `rip` runs per release; {URL_PLACEHOLDER} is the Deezer URL",
+            default=DEFAULT_RIP_COMMAND, check=_check_command),
 )
 
 SETTINGS_BY_KEY = {s.key: s for s in SETTINGS}
@@ -338,6 +376,7 @@ class Config:
     cache_max_age_hours: float = DEFAULT_CACHE_MAX_AGE_HOURS
     release_types: frozenset[str] = frozenset()
     favorites_only: bool = False
+    rip_command: str = DEFAULT_RIP_COMMAND
     verify_tls: bool = True
     #: Set when the config was loaded without demanding Navidrome credentials.
     missing_navidrome: tuple[str, ...] = ()
@@ -583,6 +622,10 @@ def load_config(
         ),
         release_types=parse_release_types(get("types")),
         favorites_only=is_true(get("favorites")),
+        # Deliberately not validated here. `config set` already checks it, so a
+        # bad value means a hand-edited file or an exported variable — and that
+        # should break `rip`, which uses it, not `scan`, which does not.
+        rip_command=(get("rip-command") or "").strip() or DEFAULT_RIP_COMMAND,
         missing_navidrome=tuple(missing),
     )
 

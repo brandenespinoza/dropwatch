@@ -383,6 +383,79 @@ class TestCachingAcrossRuns:
         assert len(scanner.dz_http.requests) == first
 
 
+class TestMissingQueueIsPersisted:
+    """`rip` runs in a separate process, so the results have to outlive the scan."""
+
+    def test_reported_releases_are_saved(self, scanner):
+        deezer_routes(
+            scanner.dz_http,
+            [
+                release_row(10, "Kid A", "2000-10-02"),
+                release_row(11, "A Moon Shaped Pool", "2016-05-08"),
+            ],
+            {
+                "10": {"title": "Kid A", "tracks": KID_A, "date": "2000-10-02"},
+                "11": {
+                    "title": "A Moon Shaped Pool",
+                    # Seven tracks: fewer and the classifier reads the shape as
+                    # an EP or single regardless of the declared record_type.
+                    "tracks": [(f"Track {i}", 220) for i in range(1, 8)],
+                    "date": "2016-05-08",
+                },
+            },
+        )
+        scanner.run(ScanOptions(progress=False))
+
+        saved = scanner.store.load_missing()
+        assert [e["title"] for e in saved] == ["A Moon Shaped Pool"]
+        entry = saved[0]
+        assert entry["id"] == "11"
+        assert entry["artist"] == "Radiohead"
+        assert entry["type"] == ReleaseType.ALBUM.value
+        assert entry["date"] == "2016-05-08"
+        assert entry["url"].endswith("/album/11")
+
+    def test_owned_releases_are_not_saved(self, scanner):
+        deezer_routes(
+            scanner.dz_http,
+            [release_row(10, "Kid A", "2000-10-02")],
+            {"10": {"title": "Kid A", "tracks": KID_A, "date": "2000-10-02"}},
+        )
+        scanner.run(ScanOptions(progress=False))
+        assert scanner.store.load_missing() == []
+
+    def test_a_type_filtered_scan_saves_only_what_it_reported(self, scanner):
+        """The queue reflects the report, so `rip` cannot offer a filtered-out release."""
+        deezer_routes(
+            scanner.dz_http,
+            [
+                release_row(10, "Kid A", "2000-10-02"),
+                release_row(43, "New Album", "2024-01-01"),
+                release_row(44, "New Single", "2024-02-01", "single"),
+            ],
+            {
+                "10": {"title": "Kid A", "tracks": KID_A, "date": "2000-10-02"},
+                "43": {
+                    "title": "New Album",
+                    "tracks": [(f"A{i}", 200) for i in range(1, 8)],
+                },
+                "44": {"title": "New Single", "tracks": [("C", 190)]},
+            },
+        )
+        scanner.run(ScanOptions(progress=False, types={ReleaseType.ALBUM}))
+        assert [e["title"] for e in scanner.store.load_missing()] == ["New Album"]
+
+    def test_another_artist_survives_a_filtered_scan(self, scanner):
+        scanner.store.save_missing(
+            [{"id": "9", "artist": "Someone Else", "title": "Theirs", "type": "Album",
+              "date": "2024-01-01", "ownership": "missing", "url": ""}]
+        )
+        deezer_routes(scanner.dz_http, [], {})
+        scanner.dz_http.add("/search/artist", {"data": []})
+        scanner.run(ScanOptions(progress=False, artist_filters=["Radiohead"]))
+        assert "Someone Else" in {e["artist"] for e in scanner.store.load_missing()}
+
+
 class TestQueuesSurviveFilteredScans:
     """A single-artist rescan must not discard everyone else's pending questions."""
 

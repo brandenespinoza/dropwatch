@@ -8,7 +8,7 @@ This document describes the product **as built**. Sections that were open
 questions in the original brief now record the decision that was made and why.
 Constraints marked as invariants still hold and must survive future changes.
 
-Status: complete and working. 550 automated tests, no runtime dependencies.
+Status: complete and working. 613 automated tests, no runtime dependencies.
 
 ## Core behavior
 
@@ -25,8 +25,15 @@ A manual run:
 9. Exits with a meaningful code.
 
 It is a manually executed command-line tool. It is not a daemon, scheduled
-service, web application, background worker, downloader, cloud service or
-notification system. **(Invariant.)**
+service, web application, background worker, cloud service or notification
+system. **(Invariant.)**
+
+It is not a downloader and must not become one. It contains no downloading or
+decryption code, ships with no downloader, and depends on none. `rip` starts a
+program the user named in a setting, in a separate process, and observes only
+its exit status — see [Downloading](#downloading). Any change that moves
+acquisition inside this tool, whether by vendoring, importing or reimplementing
+one, violates this. **(Invariant.)**
 
 ## Output
 
@@ -131,6 +138,7 @@ name.
 | `unmap <local>` | Clear everything known about an artist, back to unresolved |
 | `block --artist <name\|id\|url>` | Never report releases for this artist; `unblock` undoes it |
 | `block --album <id\|url>` | Never report this one release; `unblock --album` undoes it |
+| `rip` | Walk the last scan's results, running `rip-command` on the ones chosen |
 | `cache` | Show state location, age and entry counts by expiry class; `--clear`, `--reset-mappings`, `--reset-decisions` |
 
 `resolve`, `review` and `artists` are still accepted as the earlier names for
@@ -246,6 +254,8 @@ DROPWATCH_TIMEOUT=20
 DROPWATCH_CACHE_PATH=~/.local/state/dropwatch/state.sqlite3
 DROPWATCH_CACHE_MAX_AGE=24
 DROPWATCH_TYPES=                   # e.g. album,ep — empty means every type
+DROPWATCH_FAVORITES=false          # scan only artists starred in Navidrome
+DROPWATCH_RIP_COMMAND=rip url {url}   # what `rip` runs; {url} is the release
 ```
 
 `DROPWATCH_URL` is the base URL; `/rest` is appended internally, and a URL that
@@ -584,6 +594,52 @@ group. `--flat` removes grouping entirely.
 Automated tests cover reverse-chronological ordering, partial dates, unknown
 dates and tie stability.
 
+## Downloading
+
+The scan says what is missing; `rip` is how that list becomes action without
+retyping URLs. It walks the releases the last scan reported and, per release,
+runs the command in the `rip-command` setting.
+
+**The tool downloads nothing itself and knows nothing about downloading.** It
+starts a program named by the user, in a separate process, and reads its exit
+status. It contains no acquisition or decryption logic, ships with no
+downloader and depends on none; the default command names streamrip but does
+nothing unless the user has installed and configured it independently.
+**(Invariant — see Core behavior.)**
+
+The process boundary is the design, not an expedient. The downloader's
+credentials stay in its own configuration and never enter this tool's settings,
+memory or logs; its failures cannot corrupt state here; and substituting a
+different tool, or a script, is a settings change rather than a code change.
+Importing or vendoring a downloader would forfeit all three, plus the
+zero-dependency install, and is prohibited.
+
+`rip-command` is a template containing `{url}`, valid anywhere in the string. It
+is validated when set — non-empty, parseable, placeholder present — so a typo is
+rejected by `config set` rather than after a scan. At run time the template is
+split into arguments **before** the URL is substituted, so the URL is always
+exactly one argument regardless of its content, and no shell is involved.
+**(Invariant.)** A hand-edited or exported bad value fails `rip` alone, never
+`scan`.
+
+Interaction: per release, `r` runs, `s` or Enter skips, `a` runs the rest
+unprompted, `q` stops. Enter skips rather than runs, because a held key must not
+start a queue of downloads. Releases run sequentially with the command's stdio
+inherited so its progress display works. A non-zero exit is counted and the walk
+continues; Ctrl-C abandons the current download and returns to the prompt rather
+than ending the session. A command absent from `PATH` is reported before the
+first prompt, not after the last.
+
+`rip` requires a terminal and contacts neither Navidrome nor Deezer: the queue
+is local, written by the scan that produced it.
+
+**Ripping records nothing.** A download is not a claim of ownership, so no
+decision is stored and the release keeps being reported. It disappears when
+Navidrome indexes the files and a later scan sees them — the library remains the
+sole authority on what is owned, as everywhere else in this tool.
+**(Invariant.)** `fix --album <id> --own` remains available for asserting it
+sooner.
+
 ## Local state and caching
 
 One SQLite file at `~/.local/state/dropwatch/state.sqlite3`, created mode
@@ -593,7 +649,12 @@ lose everything.
 
 Stores: cached Deezer responses, cached local track lists keyed by an album
 fingerprint (song count + duration), artist mappings, ignored artists, ignored
-releases, and the last scan's unresolved list.
+releases, and the last scan's unresolved, review and missing lists.
+
+The three report lists are not cache entries and do not expire: they are what
+the last scan concluded, and `status`, `fix` and `rip` must still work a week
+later. A filtered scan refreshes only the entries for artists it covered, so
+`scan --artist X` does not discard the rest.
 
 Expiry is per key class, not uniform. Album metadata and track lists
 (`album:`, `album_tracks:`) are fixed once a release is published and are kept
@@ -675,12 +736,21 @@ src/dropwatch/
   state.py          SQLite cache and mappings
   scan.py           orchestration
   report.py         terminal output, sorting, grouping, summary
+  resolve_ui.py     interactive artist resolution
+  review_ui.py      interactive release review
+  rip_ui.py         hand-off to the configured downloader  ← only subprocess
+  block_cmd.py      block / unblock for artists and releases
+  setup_wizard.py   guided first-run configuration
 ```
+
+`rip_ui.py` is the only module that starts another process. Nothing else in the
+tree calls `subprocess`, and that is worth keeping true.
 
 ## Testing
 
-`python297 -m pytest` — 389 tests, no network access, no real credentials, both
-APIs mocked. **(Invariant: normal tests never contact the live services.)**
+`python3 -m pytest` — 613 tests, no network access, no real credentials, both
+APIs mocked. **(Invariant: normal tests never contact the live services, and
+never execute a downloader.)**
 
 Covered: artist-name normalization, ambiguous Deezer results, manual mappings,
 album-title normalization, deluxe/expanded/remaster matching, track-title

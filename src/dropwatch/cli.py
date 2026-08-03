@@ -53,7 +53,7 @@ log = logging.getLogger("dropwatch.cli")
 
 SUBCOMMANDS = {
     "scan", "setup", "config", "check", "fix", "status", "map",
-    "unmap", "block", "unblock", "cache",
+    "unmap", "block", "unblock", "cache", "rip",
 }
 
 #: Earlier spellings, still accepted but no longer advertised. `resolve` and
@@ -287,6 +287,19 @@ def build_parser() -> argparse.ArgumentParser:
             help="a Deezer album id or URL, of any type: album, EP or single",
         )
 
+    sub.add_parser(
+        "rip",
+        parents=[common],
+        help="walk the last scan's results, downloading the ones you pick",
+        description=(
+            "Steps through the releases the last scan reported as missing and "
+            "runs the `rip-command` setting against the ones you choose. "
+            "DropWatch does not download anything itself; it runs the command "
+            "you configured. Nothing is recorded — a downloaded release keeps "
+            "appearing until Navidrome indexes it and you scan again."
+        ),
+    )
+
     cache = sub.add_parser("cache", parents=[common], help="inspect or clear local state")
     cache.add_argument("--clear", action="store_true", help="delete cached API responses")
     cache.add_argument(
@@ -431,6 +444,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_unmap(args)
         if command in ("block", "unblock"):
             return cmd_block(args, undo=command == "unblock")
+        if command == "rip":
+            return cmd_rip(args)
         if command == "cache":
             return cmd_cache(args)
     except DropWatchError as exc:
@@ -875,6 +890,16 @@ def cmd_block(args, undo: bool) -> int:
             return action(store, provider, args.album)
         action = block_cmd.unblock_artist if undo else block_cmd.block_artist
         return action(store, provider, artist)
+
+
+def cmd_rip(args) -> int:
+    from .rip_ui import run_rip
+
+    # No Navidrome needed: the queue is local and the downloader is its own
+    # tool with its own credentials.
+    config = _load(args)
+    with _open_store(config) as store:
+        return run_rip(store, config)
 
 
 def cmd_cache(args) -> int:

@@ -34,9 +34,16 @@ Every command and flag in one place: [docs/COMMANDS.md](docs/COMMANDS.md).
 ## What it does not do
 
 It does not download music, decrypt anything, or touch your Deezer account. It
-is not a daemon, a service, a web app or a downloader — it runs when you run it
-and then exits. It never writes to Navidrome: no scans, ratings, favourites,
-playlists or tag edits. Your music files are never opened.
+is not a daemon, a service or a web app — it runs when you run it and then
+exits. It never writes to Navidrome: no scans, ratings, favourites, playlists
+or tag edits. Your music files are never opened.
+
+`dropwatch rip` is the one place it hands work outwards, and it is still not a
+downloader: it runs a command *you* configured, in a separate process, with
+credentials it never sees and cannot read. No downloader ships with it, none is
+a dependency, and the default command does nothing at all unless you have
+already installed and configured the tool it names. See
+[Downloading what it finds](#downloading-what-it-finds).
 
 It does not use MusicBrainz, in any form, directly or through a dependency.
 Deezer's own catalogue is the only metadata source.
@@ -133,6 +140,8 @@ Settings file: /Users/you/.config/dropwatch/.env
   cache-path     /Users/you/.local/state/dropwatch/state.sqlite3
   cache-max-age  24
   types          all
+  favorites      false
+  rip-command    rip url {url}
 ```
 
 A shell variable shadowing the file is called out where it happens, since that
@@ -147,7 +156,7 @@ your shell history and be visible to `ps`. `config password` prompts for it
 instead. Everything is stored in a plain, hand-editable file at mode 600.
 
 Settings are: `url`, `username`, `password`, `timeout`, `cache-path`,
-`cache-max-age`, `types`.
+`cache-max-age`, `types`, `favorites`, `rip-command`.
 
 ### Only care about albums?
 
@@ -411,6 +420,89 @@ Both suppress a release, but only `--own` records a claim about your library.
 Without a flag it shows the release and prompts. `dropwatch cache
 --reset-decisions` forgets all of them.
 
+## Downloading what it finds
+
+A scan tells you what is missing. `dropwatch rip` walks that list and, for each
+release you choose, runs a command you configured against its Deezer URL:
+
+```bash
+dropwatch scan          # produces the list
+dropwatch rip           # walk it, downloading the ones you pick
+```
+
+```text
+2 release(s) from the last scan.
+Press Enter to skip one.
+
+─── 1/2 ───
+Fleetwood Mac — Rumours
+  Album, 2024-06-02
+  https://www.deezer.com/album/302127
+  [r] rip   [s]kip   [a]ll remaining   [q]uit
+  > r
+
+  $ rip url https://www.deezer.com/album/302127
+
+  [the downloader's own output appears here]
+  ✓ done
+```
+
+| Answer | Effect |
+|---|---|
+| `r` | Run the command for this release, then move on |
+| Enter, or `s` | Skip it |
+| `a` | Run it, and everything remaining, without asking again |
+| `q` | Stop here |
+
+Enter skips rather than downloads, because holding a key down to get through a
+long list should not start forty downloads. Releases run one at a time with the
+downloader's output passed straight through, so its progress bars work and you
+see a failure when it happens. One failed release does not stop the walk, and
+Ctrl-C abandons the download in progress and returns you to the prompt.
+
+**DropWatch does not download anything itself.** It runs whatever
+`rip-command` names, in a separate process. The default targets
+[streamrip](https://github.com/nathom/streamrip):
+
+```bash
+dropwatch config set rip-command "rip url {url}"     # the default
+```
+
+`{url}` is where the Deezer URL goes, and it can sit anywhere in the command:
+
+```bash
+dropwatch config set rip-command "rip url {url} --quality 2"
+dropwatch config set rip-command "/usr/local/bin/my-fetch --out /music {url}"
+dropwatch config set rip-command "~/bin/queue-it.sh {url}"
+```
+
+Any tool that accepts a URL works, including a script of your own — nothing
+about the downloader is known to DropWatch beyond the command line you gave it.
+Whatever credentials it needs live in its configuration, not this one, and are
+never read, stored or logged here. The template is validated when you set it,
+split into arguments without a shell, and the URL is always a single argument
+however it is written.
+
+### Ripping records nothing
+
+A download is not a claim that you own something, so nothing is written to
+local state and the release keeps appearing in the results. It leaves on its
+own once Navidrome indexes the new files and you run another scan — your
+library stays the authority on what you have, which is the same rule the rest
+of the tool follows.
+
+If you want a release gone before then, that is what the existing decisions are
+for:
+
+```bash
+dropwatch fix --album 302127 --own      # I have it now; stop reporting it
+```
+
+`dropwatch rip` needs a terminal, and never touches Navidrome or Deezer itself
+— the queue is local, saved by the last scan. `--type` and `--artist` filters
+carry through, so `dropwatch scan --type album` leaves `rip` offering albums
+only.
+
 ## How matching works
 
 **Artists.** Names are compared after folding case, accents, apostrophe styles,
@@ -531,6 +623,10 @@ the same library costs almost nothing.
 - `.env` is checked at startup and you are warned if it is readable by other
   local accounts. The state database is created mode 600.
 - The state file never contains credentials of any kind.
+- `rip-command` is split into arguments with no shell involved, and the release
+  URL is substituted after the split, so it is always exactly one argument and
+  cannot become extra flags. DropWatch never learns the downloader's
+  credentials: it runs a separate program that reads its own configuration.
 
 ## Exit codes
 
@@ -554,7 +650,8 @@ artist never stops the rest of the scan.
 python3 -m pytest        # or: python3 -m pytest -q
 ```
 
-443 tests, no network access, no real credentials, both APIs mocked. They cover
+613 tests, no network access, no real credentials, both APIs mocked, and no
+downloader ever executed. They cover
 name and title normalization, edition versus version markers, deluxe/expanded/
 remaster matching, track overlap, the singles rules, alternate-version
 detection, duplicate collapsing, ambiguous artist results, manual mappings,
