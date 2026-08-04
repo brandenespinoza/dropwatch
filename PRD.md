@@ -8,7 +8,7 @@ This document describes the product **as built**. Sections that were open
 questions in the original brief now record the decision that was made and why.
 Constraints marked as invariants still hold and must survive future changes.
 
-Status: complete and working. 622 automated tests, no runtime dependencies.
+Status: complete and working. 628 automated tests, no runtime dependencies.
 
 ## Core behavior
 
@@ -480,11 +480,20 @@ Only *missing* and *probably missing* appear in the main list. *Ambiguous* goes
 to a separate review section on stderr and is never silently treated as missing.
 **(Invariant.)**
 
-An ambiguous release is a question, so it must be answerable. `review` walks the
-ambiguous releases from the last scan and records a decision — owned or missing
-— against the Deezer release ID. A stored decision short-circuits ownership
-determination on the next scan, so the same question is never asked twice.
-Without this the review section is write-only and grows without bound.
+An ambiguous release is a question, so it must be answerable. `fix` walks the
+ambiguous releases from the last scan and records a decision — owned, missing or
+blocked — against the Deezer release ID. A stored decision short-circuits
+ownership determination on the next scan, so the same question is never asked
+twice. Without this the review section is write-only and grows without bound.
+
+Owned and blocked both suppress the release and are kept apart because they say
+different things: only *owned* is a claim about the library. Both are offered in
+the prompt, because the honest answer to "do you own it?" is often no while the
+user still never wants to see it again — a karaoke edition, a territorial
+duplicate — and without a block there the only options are to lie or to leave
+the question unanswered forever. `b` blocks in both halves of `fix`, artists and
+releases, since one key meaning two things across one walk is a needless trap.
+**(Invariant.)**
 
 Decisions apply to **any** release, not only ambiguous ones, so a release in the
 main list can be dismissed the same way: `review <id|url> --own`. The results
@@ -758,7 +767,7 @@ tree calls `subprocess`, and that is worth keeping true.
 
 ## Testing
 
-`python3 -m pytest` — 622 tests, no network access, no real credentials, both
+`python3 -m pytest` — 628 tests, no network access, no real credentials, both
 APIs mocked. **(Invariant: normal tests never contact the live services, and
 never execute a downloader.)**
 

@@ -282,12 +282,19 @@ part of the catalogue — that's why several can be selected at once.
 |---|---|
 | `o` | I own it. Stop reporting it. |
 | `m` | I don't. Always report it. |
+| `b` | Block it. Stop reporting it without claiming to own it. |
 | `s` or Enter | Skip, leave undecided. |
 | `u` | Undo a decision made earlier. |
 | `q` | Quit. |
 
+`o` and `b` both suppress the release; only `o` records a claim about your
+library. `b` is the same block `block --album` applies, and it uses the same key
+as blocking an artist above. Either is cleared by `u`, `unblock --album` or
+`fix --album <id> --clear`.
+
 Non-interactively, `fix --album <id|URL>` takes `--own`, `--missing` or
-`--clear`. Copy the URL straight from the results list.
+`--clear`; `block --album <id|URL>` is the non-interactive form of `b`. Copy the
+URL straight from the results list.
 
 ### Answering directly — `map`, `unmap`, `block`, `unblock`
 
@@ -325,6 +332,7 @@ unresolved.
 |---|---|---|---|
 | `block --artist X` | every release by that artist, forever | local name, Deezer id, or Deezer URL | `unblock --artist X` |
 | `block --album X` | one release | Deezer album id or URL | `unblock --album X` |
+| `fix` → `b` | one release, interactively | the release in front of you | `u`, or `unblock --album X` |
 | `fix --album X --own` | one release, as *owned* | Deezer album id or URL | `fix --album X --clear` |
 
 `block --album` and `--own` both stop a release being reported, and they are

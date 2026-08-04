@@ -8,7 +8,13 @@ import pytest
 from conftest import deezer_release, local_album, local_artist
 
 from dropwatch.errors import ExitCode
-from dropwatch.models import DECISION_MISSING, DECISION_OWNED, Ownership, ReleaseType
+from dropwatch.models import (
+    DECISION_BLOCKED,
+    DECISION_MISSING,
+    DECISION_OWNED,
+    Ownership,
+    ReleaseType,
+)
 from dropwatch.release_match import LocalIndex, determine_ownership
 from dropwatch.review_ui import run_review
 
@@ -69,7 +75,35 @@ class TestDecisions:
         drive(monkeypatch, ["what", "o"])
         run_review(queued)
         assert queued.release_decisions() == {"555": DECISION_OWNED}
-        assert "Enter o, m, s, u or q" in capsys.readouterr().out
+        assert "Enter o, m, b, s, u or q" in capsys.readouterr().out
+
+    def test_block(self, queued, monkeypatch):
+        drive(monkeypatch, ["b"])
+        assert run_review(queued) == ExitCode.OK
+        assert queued.release_decisions() == {"555": DECISION_BLOCKED}
+
+    def test_block_is_not_recorded_as_owned(self, queued, monkeypatch):
+        """Both suppress the release; only `o` claims it is on disk."""
+        drive(monkeypatch, ["b"])
+        run_review(queued)
+        assert queued.release_decisions()["555"] != DECISION_OWNED
+
+    def test_block_is_offered_in_the_prompt(self, queued, monkeypatch, capsys):
+        drive(monkeypatch, ["s"])
+        run_review(queued)
+        assert "[b]lock" in capsys.readouterr().out
+
+    def test_undo_clears_a_block(self, queued, monkeypatch):
+        queued.set_release_decision("555", DECISION_BLOCKED)
+        drive(monkeypatch, ["u"])
+        run_review(queued)
+        assert queued.release_decisions() == {}
+
+    def test_a_block_shows_as_the_current_decision(self, queued, monkeypatch, capsys):
+        queued.set_release_decision("555", DECISION_BLOCKED)
+        drive(monkeypatch, ["s"])
+        run_review(queued)
+        assert "currently marked: blocked" in capsys.readouterr().out
 
     def test_quit_keeps_earlier_decisions(self, store, monkeypatch):
         store.save_review(
@@ -131,6 +165,15 @@ class TestDecisionsAffectOwnership:
         )
         assert verdict.ownership is Ownership.MISSING
         assert verdict.reportable
+
+    def test_blocked_decision_suppresses_it(self):
+        """`b` in the prompt has to reach the same place `block --album` does."""
+        release, index = self._setup()
+        verdict = determine_ownership(
+            release, index, ReleaseType.ALBUM, {"555": DECISION_BLOCKED}
+        )
+        assert verdict.ownership is Ownership.IGNORED
+        assert not verdict.reportable
 
     def test_a_decision_for_another_release_is_ignored(self):
         release, index = self._setup()

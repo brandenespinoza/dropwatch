@@ -165,9 +165,17 @@ class TestQueue:
         """
         from dropwatch.state import Store
 
-        with Store(tmp_path / "s.sqlite3", max_age_hours=0.0000001) as s:
+        with Store(tmp_path / "s.sqlite3", max_age_hours=1.0) as s:
             s.save_missing([{"id": "1", "artist": "A", "title": "T"}])
-            assert s.get("__missing__") is None  # expired as a cache read
+            # Backdated rather than raced against a tiny max_age: the claim is
+            # that load_missing ignores age, which needs the entry to be
+            # certainly stale, not stale if the assertion is slow enough.
+            s._conn.execute(
+                "UPDATE cache SET fetched_at = fetched_at - 86400 WHERE key = ?",
+                ("__missing__",),
+            )
+            s._conn.commit()
+            assert s.get("__missing__") is None  # stale as a cache read
             assert len(s.load_missing()) == 1  # but still readable as a report
 
 

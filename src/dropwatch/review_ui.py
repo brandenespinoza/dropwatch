@@ -2,8 +2,8 @@
 
 Every release the matcher could not settle used to print to stderr on every
 run, with no way to answer it. This is that answer: the user says whether they
-own it, the decision is stored against the Deezer release id, and the question
-is not asked again.
+own it, or that they simply never want to see it, the decision is stored
+against the Deezer release id, and the question is not asked again.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import sys
 
 from .config import invocation_name
 from .errors import ExitCode, DropWatchError
-from .models import DECISION_MISSING, DECISION_OWNED
+from .models import DECISION_BLOCKED, DECISION_MISSING, DECISION_OWNED
 from .state import Store
 
 _ID_IN_URL = re.compile(r"deezer\.com/(?:[a-z]{2}/)?album/(\d+)")
@@ -65,7 +65,9 @@ def _show(entry: dict, position: int, total: int, current: str | None) -> None:
         print(f"  {entry['url']}")
     if current:
         print(f"  currently marked: {current}")
-    print("  [o] I own it   [m] I don't, report it   [s]kip   [u]ndo   [q]uit")
+    # `b` blocks, matching the artist prompt in resolve_ui: the two halves of
+    # `fix` should not disagree about which key means "stop showing me this".
+    print("  [o] I own it   [m] I don't, report it   [b]lock   [s]kip   [u]ndo   [q]uit")
 
 
 def decide_one(
@@ -172,13 +174,19 @@ def _ask(store: Store, release_id: str):
             store.set_release_decision(release_id, DECISION_MISSING)
             print("  Marked as missing. It will appear in the main list.")
             return "changed"
+        if answer in ("b", "block"):
+            # Kept apart from "owned" on purpose: both suppress the release,
+            # but only `o` asserts something about what is on disk.
+            store.set_release_decision(release_id, DECISION_BLOCKED)
+            print("  Blocked. It will not be reported again — without claiming you own it.")
+            return "changed"
         if answer in ("u", "undo"):
             if store.clear_release_decision(release_id):
                 print("  Decision cleared; it will be judged normally again.")
                 return "changed"
             print("  No decision was stored for this release.")
             return "skipped"
-        print("  Enter o, m, s, u or q.")
+        print("  Enter o, m, b, s, u or q.")
 
 
 def _report(changed: int) -> None:

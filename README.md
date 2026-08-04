@@ -383,12 +383,21 @@ Alabama — American Christmas
   Album, 2017-10-06
   title closely resembles local album 'Christmas' but is not identical
   https://www.deezer.com/album/558123
-  [o] I own it   [m] I don't, report it   [s]kip   [u]ndo   [q]uit
+  [o] I own it   [m] I don't, report it   [b]lock   [s]kip   [u]ndo   [q]uit
 ```
 
-`o` suppresses it for good, `m` promotes it into the main list, `s` leaves it
-undecided, `u` clears a decision you made earlier. Decisions are stored against
-the Deezer release ID, so the same question is never asked twice.
+`o` suppresses it for good, `m` promotes it into the main list, `b` blocks it,
+`s` leaves it undecided, `u` clears a decision you made earlier. Decisions are
+stored against the Deezer release ID, so the same question is never asked twice.
+
+`o` and `b` both make the release go away, and the difference is what you are
+saying. `o` records that it is in your library; `b` records only that you do not
+want to hear about it — for a karaoke edition, a territorial duplicate, or an
+album you have decided you are never going to buy. Reach for `b` whenever the
+honest answer to "do you own it?" is no but you still want it gone. It is the
+same block `dropwatch block --album` applies, and `unblock --album` or `u`
+clears it. `b` is also the block key in the artist half of `fix`, so the two
+prompts agree.
 
 ### Blocking one release from the results
 
@@ -657,7 +666,7 @@ artist never stops the rest of the scan.
 python3 -m pytest        # or: python3 -m pytest -q
 ```
 
-622 tests, no network access, no real credentials, both APIs mocked, and no
+628 tests, no network access, no real credentials, both APIs mocked, and no
 downloader ever executed. They cover
 name and title normalization, edition versus version markers, deluxe/expanded/
 remaster matching, track overlap, the singles rules, alternate-version
