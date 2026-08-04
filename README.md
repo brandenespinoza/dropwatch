@@ -396,14 +396,14 @@ want to hear about it — for a karaoke edition, a territorial duplicate, or an
 album you have decided you are never going to buy. Reach for `b` whenever the
 honest answer to "do you own it?" is no but you still want it gone. It is the
 same block `dropwatch block --album` applies, and `unblock --album` or `u`
-clears it. `b` is also the block key in the artist half of `fix`, so the two
-prompts agree.
+clears it. `b` blocks in the artist half of `fix` and in `rip` too, so every
+prompt agrees on what the key means.
 
 ### Blocking one release from the results
 
-Any release in the main list can be dismissed without going through review.
-Every result line ends with its Deezer URL, so copy that (or just the number at
-the end):
+Any release in the main list can be dismissed without going through review —
+press `b` on it during `dropwatch rip`, or name it directly. Every result line
+ends with its Deezer URL, so copy that (or just the number at the end):
 
 ```bash
 dropwatch block --album https://www.deezer.com/album/558123
@@ -447,7 +447,7 @@ Press Enter to skip one.
 Fleetwood Mac — Rumours
   Album, 2024-06-02
   https://www.deezer.com/album/302127
-  [r] rip   [s]kip   [a]ll remaining   [q]uit
+  [r] rip   [s]kip   [b]lock   [a]ll remaining   [q]uit
   > r
 
   $ rip url https://www.deezer.com/album/302127
@@ -460,8 +460,19 @@ Fleetwood Mac — Rumours
 |---|---|
 | `r` | Run the command for this release, then move on |
 | Enter, or `s` | Skip it |
+| `b` | Block it — never offer or report it again |
 | `a` | Run it, and everything remaining, without asking again |
 | `q` | Stop here |
+
+`b` is there because the walk is where you are already looking at the release
+you do not want. A karaoke edition or a territorial duplicate would otherwise
+mean leaving the walk, copying the URL out of the report and running `block
+--album` afterwards. It records exactly that block, so `unblock --album <id>`
+reverses it and `fix` agrees about what the key means.
+
+A release you have blocked, or marked owned with `fix --album <id> --own`, is
+not offered on the next walk either — the queue is the last scan's conclusion,
+and decisions made since are applied when it is read.
 
 Enter skips rather than downloads, because holding a key down to get through a
 long list should not start forty downloads. Releases run one at a time with the
@@ -501,11 +512,15 @@ however it is written.
 
 ### Ripping records nothing
 
-A download is not a claim that you own something, so nothing is written to
+A download is not a claim that you own something, so ripping writes nothing to
 local state and the release keeps appearing in the results. It leaves on its
 own once Navidrome indexes the new files and you run another scan — your
 library stays the authority on what you have, which is the same rule the rest
 of the tool follows.
+
+`b` is the exception, and it is one because you asked for it: blocking records
+a decision, the way it does everywhere else. Downloading a release still tells
+the tool nothing.
 
 If you want a release gone before then, that is what the existing decisions are
 for:
@@ -666,7 +681,7 @@ artist never stops the rest of the scan.
 python3 -m pytest        # or: python3 -m pytest -q
 ```
 
-628 tests, no network access, no real credentials, both APIs mocked, and no
+642 tests, no network access, no real credentials, both APIs mocked, and no
 downloader ever executed. They cover
 name and title normalization, edition versus version markers, deluxe/expanded/
 remaster matching, track overlap, the singles rules, alternate-version

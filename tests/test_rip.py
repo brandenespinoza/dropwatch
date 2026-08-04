@@ -17,8 +17,13 @@ from dropwatch.config import (
     Config,
 )
 from dropwatch.errors import ConfigError, ExitCode
-from dropwatch.models import Ownership
-from dropwatch.rip_ui import NOT_RUN, build_command, order_queue, run_rip
+from dropwatch.models import (
+    DECISION_BLOCKED,
+    DECISION_MISSING,
+    DECISION_OWNED,
+    Ownership,
+)
+from dropwatch.rip_ui import NOT_RUN, build_command, order_queue, pending, run_rip
 from dropwatch.secrets import Secret
 
 ALBUM_URL = "https://www.deezer.com/album/302127"
@@ -289,7 +294,7 @@ class TestWalk:
     def test_garbage_reprompts(self, queued, rip_config, runner, monkeypatch, capsys):
         drive(monkeypatch, ["yes please", "r", "q"])
         run_rip(queued, rip_config)
-        assert "Enter r, s, a or q" in capsys.readouterr().out
+        assert "Enter r, s, b, a or q" in capsys.readouterr().out
         assert len(runner.calls) == 1
 
     def test_eof_quits(self, queued, rip_config, runner, monkeypatch):
@@ -313,6 +318,128 @@ class TestWalk:
         drive(monkeypatch, ["r", "q"])
         run_rip(store, rip_config)
         assert runner.calls == [["rip", "url", "https://www.deezer.com/album/999"]]
+
+
+class TestBlock:
+    """`b` during the walk, for a release you never want offered again.
+
+    The walk is where you are already looking at the thing you don't want, so
+    the alternative was leaving it, copying its URL out of the report and
+    running `block --album` afterwards.
+    """
+
+    EP_URL = "https://www.deezer.com/album/825535241"
+
+    def test_b_records_a_block(self, queued, rip_config, runner, monkeypatch):
+        drive(monkeypatch, ["b", "q"])
+        assert run_rip(queued, rip_config) == ExitCode.OK
+        assert queued.release_decisions() == {"302127": DECISION_BLOCKED}
+        assert runner.calls == []  # blocking is not downloading
+
+    def test_it_is_the_decision_unblock_reverses(
+        self, queued, rip_config, runner, monkeypatch
+    ):
+        """`unblock --album` clears the release decision; so must this one."""
+        drive(monkeypatch, ["b", "q"])
+        run_rip(queued, rip_config)
+        assert queued.clear_release_decision("302127") is True
+        assert queued.release_decisions() == {}
+
+    def test_the_walk_continues_afterwards(
+        self, queued, rip_config, runner, monkeypatch
+    ):
+        drive(monkeypatch, ["b", "r"])
+        run_rip(queued, rip_config)
+        assert [c[-1] for c in runner.calls] == [self.EP_URL]
+
+    def test_a_blocked_release_is_not_offered_again(
+        self, queued, rip_config, runner, monkeypatch, capsys
+    ):
+        drive(monkeypatch, ["b", "q"])
+        run_rip(queued, rip_config)
+        capsys.readouterr()
+
+        drive(monkeypatch, ["q"])
+        run_rip(queued, rip_config)
+        out = capsys.readouterr().out
+        assert "1 release(s) from the last scan" in out
+        assert "Rumours" not in out
+        assert "Another Release" in out
+
+    def test_a_release_marked_owned_is_not_offered(
+        self, queued, rip_config, runner, monkeypatch, capsys
+    ):
+        """`fix --album <id> --own` said to stop reporting it; this reports it."""
+        queued.set_release_decision("302127", DECISION_OWNED)
+        drive(monkeypatch, ["q"])
+        run_rip(queued, rip_config)
+        assert "Rumours" not in capsys.readouterr().out
+
+    def test_a_release_marked_missing_is_still_offered(
+        self, queued, rip_config, runner, monkeypatch, capsys
+    ):
+        """That decision means "always report it", which is the opposite."""
+        queued.set_release_decision("302127", DECISION_MISSING)
+        drive(monkeypatch, ["q"])
+        run_rip(queued, rip_config)
+        assert "Rumours" in capsys.readouterr().out
+
+    def test_a_fully_decided_queue_does_not_advise_a_scan(
+        self, queued, rip_config, runner, monkeypatch, capsys
+    ):
+        for release_id in ("302127", "825535241"):
+            queued.set_release_decision(release_id, DECISION_BLOCKED)
+        assert run_rip(queued, rip_config) == ExitCode.OK
+        out = capsys.readouterr().out
+        assert "every release from the last scan is decided" in out
+        assert "Run a scan first" not in out
+
+    def test_the_prompt_offers_it(self, queued, rip_config, runner, monkeypatch, capsys):
+        drive(monkeypatch, ["q"])
+        run_rip(queued, rip_config)
+        assert "[b]lock" in capsys.readouterr().out
+
+    def test_it_is_counted_in_the_summary(
+        self, queued, rip_config, runner, monkeypatch, capsys
+    ):
+        drive(monkeypatch, ["b", "r"])
+        run_rip(queued, rip_config)
+        assert "1 ripped, 1 blocked" in capsys.readouterr().out
+
+    def test_an_entry_without_an_id_cannot_be_blocked(
+        self, store, rip_config, runner, monkeypatch, capsys
+    ):
+        """Rather than writing a decision against an empty id."""
+        store.save_missing([{"artist": "A", "title": "T", "type": "Album"}])
+        drive(monkeypatch, ["b", "q"])
+        run_rip(store, rip_config)
+        assert store.release_decisions() == {}
+        assert "no Deezer id" in capsys.readouterr().err
+
+
+class TestPending:
+    """Filtering happens at read time, like the ordering, and for the same
+    reason: the stored queue is written by scans that know nothing about
+    decisions made since."""
+
+    ENTRIES = [{"id": "1"}, {"id": "2"}, {"id": "3"}]
+
+    def test_no_decisions_keeps_everything(self):
+        assert pending(self.ENTRIES, {}) == self.ENTRIES
+
+    def test_blocked_and_owned_are_dropped(self):
+        kept = pending(
+            self.ENTRIES, {"1": DECISION_BLOCKED, "3": DECISION_OWNED}
+        )
+        assert [e["id"] for e in kept] == ["2"]
+
+    def test_missing_is_kept(self):
+        kept = pending(self.ENTRIES, {"1": DECISION_MISSING})
+        assert [e["id"] for e in kept] == ["1", "2", "3"]
+
+    def test_an_entry_without_an_id_survives(self):
+        """It cannot have been decided, so it cannot have been suppressed."""
+        assert pending([{"title": "T"}], {"": DECISION_BLOCKED}) == [{"title": "T"}]
 
 
 class TestFailures:
