@@ -13,9 +13,9 @@ switching downloaders is a settings change instead of a code change.
 Ripping still records nothing. A download is not a claim that you own
 something, so the files land on disk, Navidrome indexes them on its own
 schedule, and the next scan sees them the same way it sees everything else.
-The single write is ``b``, which stores the same block ``fix`` and
-``block --album`` store — an answer the user gave, not an inference drawn from
-having downloaded something.
+The only writes are ``o`` and ``b``, which store the same two decisions ``fix``
+stores — answers the user gave, not inferences drawn from having downloaded
+something. Nothing is recorded as a consequence of a download succeeding.
 """
 
 from __future__ import annotations
@@ -168,23 +168,35 @@ def _preflight(command: list[str]) -> str | None:
     return None
 
 
-def _block(store, entry: dict) -> int:
-    """Record that a release should never be reported. Returns 1 if stored.
+#: What each answer stores, and what to say once it is stored. Both suppress
+#: the release; only `o` claims anything about the library. `fix` draws that
+#: distinction and the wording here keeps it rather than offering two
+#: identical-looking ways to make something disappear.
+_DECISIONS = {
+    "own": (DECISION_OWNED, "  Marked as owned. It will not be reported again."),
+    "block": (
+        DECISION_BLOCKED,
+        "  Blocked. It will not be reported again — without claiming you own it.",
+    ),
+}
 
-    The same decision `fix` and `block --album` record, against the same
-    Deezer release id, so `unblock --album <id>` reverses any of the three.
+
+def _decide(store, entry: dict, answer: str) -> int:
+    """Record what the user said about a release. Returns 1 if stored.
+
+    The same decisions `fix` records, against the same Deezer release id, so
+    `fix --album <id> --clear` and `unblock --album <id>` reverse them.
     """
+    decision, confirmation = _DECISIONS[answer]
     release_id = str(entry.get("id") or "")
     if not release_id:
         print(
-            "  Cannot block this one: the scan recorded no Deezer id for it.",
+            "  Cannot record that: the scan noted no Deezer id for this release.",
             file=sys.stderr,
         )
         return 0
-    store.set_release_decision(release_id, DECISION_BLOCKED)
-    # Said explicitly because the neighbouring `r` is about acquiring the
-    # release: blocking is not a claim to have it, only to stop being told.
-    print("  Blocked. It will not be reported again — without claiming you own it.")
+    store.set_release_decision(release_id, decision)
+    print(confirmation)
     return 1
 
 
@@ -227,7 +239,7 @@ def run_rip(store, config) -> int:
     print(f"{total} release(s) from the last scan.")
     print("Press Enter to skip one.")
 
-    ripped = failed = blocked = 0
+    ripped = failed = owned = blocked = 0
     rip_everything = False
 
     for position, entry in enumerate(entries, start=1):
@@ -240,8 +252,11 @@ def run_rip(store, config) -> int:
                 break
             if answer == "skip":
                 continue
+            if answer == "own":
+                owned += _decide(store, entry, answer)
+                continue
             if answer == "block":
-                blocked += _block(store, entry)
+                blocked += _decide(store, entry, answer)
                 continue
             if answer == "all":
                 rip_everything = True
@@ -255,16 +270,19 @@ def run_rip(store, config) -> int:
             if status != NOT_RUN:
                 print(f"  ✗ exited {status}", file=sys.stderr)
 
-    _report(ripped, failed, blocked)
+    _report(ripped, failed, owned, blocked)
     return ExitCode.OK
 
 
 def _ask() -> str:
-    """Prompt for one release. Returns "rip", "all", "block", "skip" or "quit"."""
+    """Prompt for one release. Returns an answer name, or "skip" / "quit"."""
     while True:
-        # `b` because that is already the block key in both halves of `fix`.
-        # A third prompt in the same tool must not spell it differently.
-        print("  [r] rip   [s]kip   [b]lock   [a]ll remaining   [q]uit")
+        # `o` and `b` are the keys `fix` already uses for these two decisions.
+        # A third prompt in the same tool must not spell them differently.
+        print(
+            "  [r] rip   [s]kip   [o] I own it   [b]lock   "
+            "[a]ll remaining   [q]uit"
+        )
         try:
             answer = input("  > ").strip().lower()
         except EOFError:
@@ -278,27 +296,31 @@ def _ask() -> str:
             return "skip"
         if answer in ("r", "rip"):
             return "rip"
+        if answer in ("o", "own", "owned"):
+            return "own"
         if answer in ("b", "block"):
             return "block"
         if answer in ("a", "all"):
             return "all"
-        print("  Enter r, s, b, a or q.")
+        print("  Enter r, s, o, b, a or q.")
 
 
-def _report(ripped: int, failed: int, blocked: int) -> None:
-    if not ripped and not failed and not blocked:
+def _report(ripped: int, failed: int, owned: int, blocked: int) -> None:
+    if not any((ripped, failed, owned, blocked)):
         print("\nNothing ripped.")
         return
     parts = [f"{ripped} ripped"]
     if failed:
         parts.append(f"{failed} failed")
+    if owned:
+        parts.append(f"{owned} marked owned")
     if blocked:
         parts.append(f"{blocked} blocked")
     print(f"\n{', '.join(parts)}.")
     if ripped:
         # Said plainly because the alternative is assuming a scan is now wrong.
-        # Named rather than "these": a blocked release counted on the line
-        # above is the one thing here that does not come back.
+        # Named rather than "these": the decided releases counted on the line
+        # above are the ones here that do not come back.
         print(
             "Ripped releases stay in the results until Navidrome indexes the "
             "files and you scan again."

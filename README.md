@@ -447,7 +447,7 @@ Press Enter to skip one.
 Fleetwood Mac — Rumours
   Album, 2024-06-02
   https://www.deezer.com/album/302127
-  [r] rip   [s]kip   [b]lock   [a]ll remaining   [q]uit
+  [r] rip   [s]kip   [o] I own it   [b]lock   [a]ll remaining   [q]uit
   > r
 
   $ rip url https://www.deezer.com/album/302127
@@ -460,19 +460,25 @@ Fleetwood Mac — Rumours
 |---|---|
 | `r` | Run the command for this release, then move on |
 | Enter, or `s` | Skip it |
+| `o` | I already have it — stop reporting it |
 | `b` | Block it — never offer or report it again |
 | `a` | Run it, and everything remaining, without asking again |
 | `q` | Stop here |
 
-`b` is there because the walk is where you are already looking at the release
-you do not want. A karaoke edition or a territorial duplicate would otherwise
-mean leaving the walk, copying the URL out of the report and running `block
---album` afterwards. It records exactly that block, so `unblock --album <id>`
-reverses it and `fix` agrees about what the key means.
+`o` and `b` are there because the walk is where you are already looking at the
+release. A karaoke edition, a territorial duplicate, or something the matcher
+was simply wrong about would otherwise mean leaving the walk, copying the URL
+out of the report, running `fix --album <id> --own` or `block --album`, and
+starting again.
 
-A release you have blocked, or marked owned with `fix --album <id> --own`, is
-not offered on the next walk either — the queue is the last scan's conclusion,
-and decisions made since are applied when it is read.
+They are the same two decisions `fix` records, and the difference between them
+is the same one: `o` says the release is in your library, `b` says only that you
+do not want to hear about it. `fix --album <id> --clear` and `unblock --album
+<id>` reverse them.
+
+A release you have answered either way is not offered on the next walk — the
+queue is the last scan's conclusion, and decisions made since are applied when
+it is read. That includes decisions you made through `fix`.
 
 Enter skips rather than downloads, because holding a key down to get through a
 long list should not start forty downloads. Releases run one at a time with the
@@ -518,9 +524,10 @@ own once Navidrome indexes the new files and you run another scan — your
 library stays the authority on what you have, which is the same rule the rest
 of the tool follows.
 
-`b` is the exception, and it is one because you asked for it: blocking records
-a decision, the way it does everywhere else. Downloading a release still tells
-the tool nothing.
+`o` and `b` are the exceptions, and they are exceptions because you asked for
+them: answering a question records a decision, the way it does everywhere else.
+Downloading a release still tells the tool nothing — a successful rip is not
+turned into an `o` on your behalf.
 
 If you want a release gone before then, that is what the existing decisions are
 for:
@@ -681,7 +688,7 @@ artist never stops the rest of the scan.
 python3 -m pytest        # or: python3 -m pytest -q
 ```
 
-642 tests, no network access, no real credentials, both APIs mocked, and no
+650 tests, no network access, no real credentials, both APIs mocked, and no
 downloader ever executed. They cover
 name and title normalization, edition versus version markers, deluxe/expanded/
 remaster matching, track overlap, the singles rules, alternate-version

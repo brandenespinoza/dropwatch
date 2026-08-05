@@ -8,7 +8,7 @@ This document describes the product **as built**. Sections that were open
 questions in the original brief now record the decision that was made and why.
 Constraints marked as invariants still hold and must survive future changes.
 
-Status: complete and working. 642 automated tests, no runtime dependencies.
+Status: complete and working. 650 automated tests, no runtime dependencies.
 
 ## Core behavior
 
@@ -641,27 +641,30 @@ filtered scan merges retained entries with fresh ones and would otherwise undo
 it. The type sequence is taken from the report's own `GROUP_ORDER` rather than
 restated, so the two cannot disagree. **(Invariant.)**
 
-Interaction: per release, `r` runs, `s` or Enter skips, `b` blocks, `a` runs the
-rest unprompted, `q` stops. Enter skips rather than runs, because a held key must
-not start a queue of downloads. Releases run sequentially with the command's
-stdio inherited so its progress display works. A non-zero exit is counted and
-the walk continues; Ctrl-C abandons the current download and returns to the
-prompt rather than ending the session. A command absent from `PATH` is reported
-before the first prompt, not after the last.
+Interaction: per release, `r` runs, `s` or Enter skips, `o` records ownership,
+`b` blocks, `a` runs the rest unprompted, `q` stops. Enter skips rather than
+runs, because a held key must not start a queue of downloads. Releases run
+sequentially with the command's stdio inherited so its progress display works. A
+non-zero exit is counted and the walk continues; Ctrl-C abandons the current
+download and returns to the prompt rather than ending the session. A command
+absent from `PATH` is reported before the first prompt, not after the last.
 
-`b` exists because the walk is where the user is already looking at the release
-they do not want, and the alternative was abandoning the walk, copying the URL
-out of the report and running `block --album`. It stores the same
-`DECISION_BLOCKED` against the same Deezer release id as `fix` → `b` and
-`block --album`, so `unblock --album <id>` reverses all three. The key is `b` in
-every prompt that has one — both halves of `fix` and this — because one letter
-meaning different things across one tool is a trap. **(Invariant.)**
+`o` and `b` exist because the walk is where the user is already looking at the
+release, and the alternative was abandoning it, copying the URL out of the
+report and running `fix --album <id> --own` or `block --album`. They store the
+same `DECISION_OWNED` and `DECISION_BLOCKED` against the same Deezer release id
+as `fix` does, so `fix --album <id> --clear` and `unblock --album <id>` reverse
+them wherever they were recorded. Both suppress the release and only `o` claims
+anything about the library — the distinction `fix` draws, preserved here rather
+than collapsed into one way of making something disappear. The keys are `o` and
+`b` in every prompt that offers them, because one letter meaning different
+things across one tool is a trap. **(Invariant.)**
 
-The queue is filtered when read, not when written: a release already blocked, or
-marked owned by `fix --album <id> --own`, is left out of the walk. The stored
-queue is a scan's conclusion and knows nothing of decisions made after it, so
-without this a block taken during a walk would be re-offered by the next one —
-the single thing blocking exists to prevent. `DECISION_MISSING` means the
+The queue is filtered when read, not when written: a release already decided
+either way is left out of the walk, including decisions made through `fix`. The
+stored queue is a scan's conclusion and knows nothing of decisions made after
+it, so without this a block taken during a walk would be re-offered by the next
+one — the single thing blocking exists to prevent. `DECISION_MISSING` means the
 opposite and never filters. This is read-time for the same reason the ordering
 is. **(Invariant.)**
 
@@ -672,10 +675,14 @@ is local, written by the scan that produced it.
 stores no decision and the release keeps being reported. It disappears when
 Navidrome indexes the files and a later scan sees them — the library remains the
 sole authority on what is owned, as everywhere else in this tool.
-**(Invariant.)** `fix --album <id> --own` remains available for asserting it
-sooner. Answering `b` is the one write the walk performs, and it is not an
-exception to the rule: it records an answer the user gave, not an inference
-drawn from having downloaded something.
+**(Invariant.)** Asserting it sooner is available, in the walk as `o` and
+outside it as `fix --album <id> --own`.
+
+`o` and `b` are the only writes the walk performs, and neither is an exception
+to the rule: they record answers the user gave. A successful rip must never be
+turned into a `DECISION_OWNED` on the user's behalf — that would be the tool
+inferring ownership from its own action, which is precisely what the library
+being the sole authority forbids. **(Invariant.)**
 
 ## Local state and caching
 
@@ -785,7 +792,7 @@ tree calls `subprocess`, and that is worth keeping true.
 
 ## Testing
 
-`python3 -m pytest` — 642 tests, no network access, no real credentials, both
+`python3 -m pytest` — 650 tests, no network access, no real credentials, both
 APIs mocked. **(Invariant: normal tests never contact the live services, and
 never execute a downloader.)**
 

@@ -294,7 +294,7 @@ class TestWalk:
     def test_garbage_reprompts(self, queued, rip_config, runner, monkeypatch, capsys):
         drive(monkeypatch, ["yes please", "r", "q"])
         run_rip(queued, rip_config)
-        assert "Enter r, s, b, a or q" in capsys.readouterr().out
+        assert "Enter r, s, o, b, a or q" in capsys.readouterr().out
         assert len(runner.calls) == 1
 
     def test_eof_quits(self, queued, rip_config, runner, monkeypatch):
@@ -318,6 +318,84 @@ class TestWalk:
         drive(monkeypatch, ["r", "q"])
         run_rip(store, rip_config)
         assert runner.calls == [["rip", "url", "https://www.deezer.com/album/999"]]
+
+
+class TestOwn:
+    """`o` during the walk, for a release the scan was wrong about.
+
+    Same round-trip saved as `b`: the alternative was abandoning the walk to
+    run `fix --album <id> --own`. Kept distinct from `b` because only this one
+    claims the release is in the library.
+    """
+
+    EP_URL = "https://www.deezer.com/album/825535241"
+
+    def test_o_records_ownership(self, queued, rip_config, runner, monkeypatch):
+        drive(monkeypatch, ["o", "q"])
+        assert run_rip(queued, rip_config) == ExitCode.OK
+        assert queued.release_decisions() == {"302127": DECISION_OWNED}
+        assert runner.calls == []  # saying you have it does not download it
+
+    def test_it_is_not_the_same_decision_as_block(
+        self, queued, rip_config, runner, monkeypatch
+    ):
+        """Both suppress the release; only one is a claim about the library."""
+        drive(monkeypatch, ["o", "b"])
+        run_rip(queued, rip_config)
+        assert queued.release_decisions() == {
+            "302127": DECISION_OWNED,
+            "825535241": DECISION_BLOCKED,
+        }
+
+    def test_the_walk_continues_afterwards(
+        self, queued, rip_config, runner, monkeypatch
+    ):
+        drive(monkeypatch, ["o", "r"])
+        run_rip(queued, rip_config)
+        assert [c[-1] for c in runner.calls] == [self.EP_URL]
+
+    def test_an_owned_release_is_not_offered_again(
+        self, queued, rip_config, runner, monkeypatch, capsys
+    ):
+        drive(monkeypatch, ["o", "q"])
+        run_rip(queued, rip_config)
+        capsys.readouterr()
+
+        drive(monkeypatch, ["q"])
+        run_rip(queued, rip_config)
+        out = capsys.readouterr().out
+        assert "1 release(s) from the last scan" in out
+        assert "Rumours" not in out
+
+    def test_the_prompt_offers_it(self, queued, rip_config, runner, monkeypatch, capsys):
+        drive(monkeypatch, ["q"])
+        run_rip(queued, rip_config)
+        assert "[o] I own it" in capsys.readouterr().out
+
+    def test_it_is_counted_in_the_summary(
+        self, queued, rip_config, runner, monkeypatch, capsys
+    ):
+        drive(monkeypatch, ["o", "r"])
+        run_rip(queued, rip_config)
+        assert "1 ripped, 1 marked owned" in capsys.readouterr().out
+
+    def test_it_is_the_decision_clear_reverses(
+        self, queued, rip_config, runner, monkeypatch
+    ):
+        """`fix --album <id> --clear` clears it; so must this one."""
+        drive(monkeypatch, ["o", "q"])
+        run_rip(queued, rip_config)
+        assert queued.clear_release_decision("302127") is True
+        assert queued.release_decisions() == {}
+
+    def test_an_entry_without_an_id_cannot_be_marked(
+        self, store, rip_config, runner, monkeypatch, capsys
+    ):
+        store.save_missing([{"artist": "A", "title": "T", "type": "Album"}])
+        drive(monkeypatch, ["o", "q"])
+        run_rip(store, rip_config)
+        assert store.release_decisions() == {}
+        assert "no Deezer id" in capsys.readouterr().err
 
 
 class TestBlock:

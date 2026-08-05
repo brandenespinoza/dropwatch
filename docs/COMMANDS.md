@@ -178,6 +178,7 @@ the next one replaces it.
 |---|---|
 | `r` | Run the command for this release |
 | Enter, or `s` | Skip it |
+| `o` | I already have it — stop reporting it |
 | `b` | Block it — never offer or report it again |
 | `a` | Run it and every remaining release without asking again |
 | `q` | Stop |
@@ -186,11 +187,13 @@ Releases run one at a time with the command's output passed through, so its
 progress display works normally. A release that fails does not stop the walk;
 Ctrl-C abandons the current download and returns to the prompt.
 
-`b` records the same block as `block --album <id>` and as `b` in `fix`, against
-the same Deezer release id; `unblock --album <id>` reverses any of them. A
-release already blocked, or marked owned by `fix --album <id> --own`, is left
-out of the next walk — decisions are applied when the queue is read, so one
-made after the scan still counts.
+`o` and `b` record the same two decisions as `fix --album <id> --own` and
+`block --album <id>`, against the same Deezer release id; `fix --album <id>
+--clear` and `unblock --album <id>` reverse them. Both suppress the release and
+only `o` claims it is in your library, exactly as in `fix`.
+
+A release already decided either way is left out of the next walk — decisions
+are applied when the queue is read, so one made after the scan still counts.
 
 Order matches the report: albums, then EPs, then singles, then unclassified,
 newest first within each group. Less precise dates fall below the fully dated
@@ -213,9 +216,12 @@ always one argument.
 
 Ripping records nothing in local state — a download is not a claim of
 ownership. The release keeps appearing until Navidrome indexes the files and
-you scan again. To drop it sooner, use `dropwatch fix --album <id> --own`.
-Answering `b` is the only thing in the walk that writes anything, because that
-is a decision you made rather than something inferred from a download.
+you scan again. To drop it sooner, answer `o` in the walk, or run `dropwatch
+fix --album <id> --own`.
+
+Answering `o` or `b` is the only thing in the walk that writes anything: those
+are decisions you made, rather than something inferred from a download. A
+successful rip never becomes an `o` on your behalf.
 
 If the command is missing from your `PATH`, `rip` says so before asking about
 anything rather than after.
@@ -343,6 +349,7 @@ unresolved.
 | `block --album X` | one release | Deezer album id or URL | `unblock --album X` |
 | `fix` → `b` | one release, interactively | the release in front of you | `u`, or `unblock --album X` |
 | `rip` → `b` | one release, while walking the results | the release in front of you | `unblock --album X` |
+| `rip` → `o` | one release, as *owned*, while walking | the release in front of you | `fix --album X --clear` |
 | `fix --album X --own` | one release, as *owned* | Deezer album id or URL | `fix --album X --clear` |
 
 `block --album` and `--own` both stop a release being reported, and they are
