@@ -21,6 +21,7 @@ Singles (1)
 ```
 
 Every command and flag in one place: [docs/COMMANDS.md](docs/COMMANDS.md).
+Why it works the way it does: [docs/DESIGN.md](docs/DESIGN.md).
 
 ## What it does
 

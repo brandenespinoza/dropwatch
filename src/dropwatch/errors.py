@@ -1,8 +1,8 @@
 """Error taxonomy and process exit codes.
 
-The PRD requires that network failures, protocol failures and credential
-failures stay clearly distinguishable, so each condition gets its own class
-rather than a single generic "connection failed".
+Network failures, protocol failures and credential failures must stay clearly
+distinguishable (an invariant — see docs/DESIGN.md), so each condition gets its
+own class rather than a single generic "connection failed".
 """
 
 from __future__ import annotations

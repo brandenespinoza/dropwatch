@@ -67,8 +67,8 @@ class Candidate:
 
     @property
     def total_score(self) -> float:
-        # Overlap dominates; fan count is only a tie-breaker, per the PRD's
-        # instruction to treat popularity as weak supporting evidence.
+        # Overlap dominates; fan count is only a tie-breaker, because
+        # popularity is weak supporting evidence — see docs/DESIGN.md.
         popularity = min(self.artist.nb_fan, 1_000_000) / 1_000_000 * 0.05
         return self.name_score + min(self.overlap, 5) * 0.1 + popularity
 
