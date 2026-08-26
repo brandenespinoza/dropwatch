@@ -39,7 +39,7 @@ from .release_match import (
     determine_ownership,
     refine_with_isrc,
 )
-from .state import Store
+from .state import ScanScope, Store
 
 log = logging.getLogger("dropwatch.scan")
 
@@ -311,6 +311,11 @@ class Scanner:
         self._clear_progress(options)
 
         result.missing = dedupe_results(result.missing, lambda item: item.release_type)
+        # Favourite-ness is stamped per entry because the queue below is a
+        # merge: releases found under `--favorites` and releases left behind by
+        # an earlier full scan coexist in it, and unlike type or date it cannot
+        # be recovered from a stored entry — only Navidrome knows, and `rip`
+        # never asks it anything.
         fresh_missing = [
             {
                 "id": item.release.id,
@@ -320,6 +325,7 @@ class Scanner:
                 "date": str(item.release.release_date),
                 "ownership": item.ownership.value,
                 "url": item.release.link,
+                "favorites": options.favorites,
             }
             for item in result.missing
         ]
@@ -357,6 +363,19 @@ class Scanner:
         self.store.save_unresolved(
             _merge_queue(
                 self.store.load_unresolved(), fresh_unresolved, result.scanned_names, "name"
+            )
+        )
+        # The scope as resolved, not as typed: `rip` replays what this scan
+        # actually covered, so a flag and the setting it overrode are the same
+        # fact by the time they reach here. `limit` is deliberately absent — it
+        # truncates how much work the scan does rather than describing which
+        # releases belong in the results, so there is nothing to replay.
+        self.store.save_scan_scope(
+            ScanScope(
+                favorites=options.favorites,
+                since=options.since,
+                types=frozenset(t.value for t in options.types or ()),
+                artists=tuple(options.artist_filters),
             )
         )
         return result

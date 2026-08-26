@@ -4,7 +4,14 @@ from __future__ import annotations
 
 import time
 
-from dropwatch.state import MappingTarget, STATUS_BLOCKED, Store
+import pytest
+
+from dropwatch.state import (
+    MappingTarget,
+    SCHEMA_VERSION,
+    STATUS_BLOCKED,
+    Store,
+)
 
 
 class TestCache:
@@ -340,7 +347,6 @@ class TestSchemaMigration:
             assert store.get_mapping("Björk").deezer_ids == ["630"]
 
     def test_version_is_recorded(self, tmp_path):
-        from dropwatch.state import SCHEMA_VERSION
 
         path = tmp_path / "old.sqlite3"
         self._v1_database(path)
@@ -349,3 +355,26 @@ class TestSchemaMigration:
                 "SELECT value FROM meta WHERE key='schema_version'"
             ).fetchone()
         assert int(row["value"]) == SCHEMA_VERSION
+
+
+class TestMeta:
+    """The scan-scope record shares a table with the schema version."""
+
+    def test_a_value_round_trips(self, store):
+        store.set_meta("last_scan_scope", "{}")
+        assert store.get_meta("last_scan_scope") == "{}"
+
+    def test_none_clears_it(self, store):
+        store.set_meta("last_scan_scope", "{}")
+        store.set_meta("last_scan_scope", None)
+        assert store.get_meta("last_scan_scope") is None
+
+    def test_an_unset_key_reads_as_none(self, store):
+        assert store.get_meta("never_written") is None
+
+    def test_the_schema_version_cannot_be_written_through_it(self, store):
+        """Clearing it would reset the store to v1 and re-run every migration
+        on the next open, which no caller could plausibly intend."""
+        with pytest.raises(ValueError):
+            store.set_meta("schema_version", None)
+        assert store.get_meta("schema_version") == str(SCHEMA_VERSION)

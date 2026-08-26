@@ -17,6 +17,7 @@ from dropwatch.models import ReleaseDate, ReleaseType
 from dropwatch.navidrome import NavidromeClient
 from dropwatch.report import build_summary, print_summary, render_table, sort_releases
 from dropwatch.scan import ScanOptions, Scanner
+from dropwatch.state import ScanScope
 
 KID_A = [
     ("Everything In Its Right Place", 251),
@@ -444,6 +445,73 @@ class TestMissingQueueIsPersisted:
         )
         scanner.run(ScanOptions(progress=False, types={ReleaseType.ALBUM}))
         assert [e["title"] for e in scanner.store.load_missing()] == ["New Album"]
+
+    @staticmethod
+    def _one_album(scanner):
+        deezer_routes(
+            scanner.dz_http,
+            [release_row(43, "New Album", "2024-01-01")],
+            {
+                "43": {
+                    "title": "New Album",
+                    "tracks": [(f"A{i}", 200) for i in range(1, 8)],
+                }
+            },
+        )
+
+    def test_the_queue_stamps_each_entry_with_favourite_ness(self, scanner):
+        """The one axis `rip` cannot recover from a stored entry, so a full
+        scan must not leave releases looking like a favourites scan found them."""
+        self._one_album(scanner)
+        scanner.run(ScanOptions(progress=False))
+        assert [e["favorites"] for e in scanner.store.load_missing()] == [False]
+
+        scanner.nav_http.add(
+            "getStarred2.view",
+            subsonic({"starred2": {"artist": [{"id": "1", "name": "Radiohead"}]}}),
+        )
+        scanner.run(ScanOptions(progress=False, favorites=True))
+        assert [e["favorites"] for e in scanner.store.load_missing()] == [True]
+
+    def test_the_scan_records_the_scope_it_ran_with(self, scanner):
+        """`rip` replays this, so it must describe the scan as resolved — not
+        as typed. A flag and the setting it overrode are the same fact here."""
+        self._one_album(scanner)
+        scanner.run(
+            ScanOptions(
+                progress=False,
+                since=ReleaseDate.parse("2020"),
+                types={ReleaseType.ALBUM},
+                artist_filters=["Radiohead"],
+            )
+        )
+        assert scanner.store.load_scan_scope() == ScanScope(
+            favorites=False,
+            since=ReleaseDate.parse("2020"),
+            types=frozenset({"Album"}),
+            artists=("Radiohead",),
+        )
+
+    def test_a_wider_scan_clears_the_previous_scope(self, scanner):
+        """"No cutoff" has to be recorded, not merely left behind: otherwise a
+        later unfiltered scan would still be walked through the old window."""
+        self._one_album(scanner)
+        scanner.run(
+            ScanOptions(
+                progress=False,
+                since=ReleaseDate.parse("2020"),
+                types={ReleaseType.ALBUM},
+            )
+        )
+        scanner.run(ScanOptions(progress=False))
+        assert scanner.store.load_scan_scope() == ScanScope()
+
+    def test_limit_is_not_part_of_the_scope(self, scanner):
+        """It truncates how much work the scan does rather than describing
+        which releases belong in the results, so there is nothing to replay."""
+        self._one_album(scanner)
+        scanner.run(ScanOptions(progress=False, limit=1))
+        assert scanner.store.load_scan_scope() == ScanScope()
 
     def test_another_artist_survives_a_filtered_scan(self, scanner):
         scanner.store.save_missing(

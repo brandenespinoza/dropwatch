@@ -538,9 +538,64 @@ dropwatch fix --album 302127 --own      # I have it now; stop reporting it
 ```
 
 `dropwatch rip` needs a terminal, and never touches Navidrome or Deezer itself
-— the queue is local, saved by the last scan. `--type` and `--artist` filters
-carry through, so `dropwatch scan --type album` leaves `rip` offering albums
-only.
+— the queue is local, saved by the last scan.
+
+### What the walk offers
+
+**`rip` offers what the last scan reported.** That is the whole rule.
+
+It needs stating because the queue is not simply the last scan's results. A
+scan covering part of the library leaves the rest of the queue alone — which is
+what stops a single-artist rescan from discarding everyone else's pending
+releases — so a narrow scan sits on top of whatever earlier, wider scans left
+behind. Without this rule the walk would open on some release the scan you just
+ran had nothing to do with.
+
+Four things narrow a scan, and the walk replays all four:
+
+```bash
+dropwatch scan --favorites --since 2024
+dropwatch rip      # the same window the scan just printed
+
+dropwatch scan --artist "Radiohead" --type album
+dropwatch rip      # Radiohead albums, not everyone else's singles
+```
+
+`--limit` is the exception, because it is not really a filter: it caps how many
+artists get scanned rather than saying which releases belong in the results, so
+there is nothing to replay.
+
+Settings scope the *scan*, not the walk. If you keep `favorites = true` and want
+everything for once, widen the scan and the walk follows:
+
+```bash
+dropwatch scan --all-artists
+dropwatch rip      # everything, despite the saved setting
+```
+
+Changing a setting on its own does not re-scope a walk — the queue is a scan's
+conclusion, so nothing about it changes until you scan again.
+
+Whatever is narrowing, the count line says so, and a walk shorter than the
+results you last saw explains itself:
+
+```text
+9 release(s) from the last scan (favourites only, since 2024).
+```
+
+If the scope hides the queue entirely, `rip` names the filter responsible
+rather than advising a scan that would change nothing:
+
+```text
+121 release(s) in the queue, none released on or after 2024.
+  Re-scan without the cutoff: `dropwatch scan`.
+```
+
+Nothing is deleted by any of this. Widen the scan and the releases come back.
+
+An imprecise date passes the cutoff rather than being excluded on a
+technicality — a release dated only `2024` is offered under `--since 2024-06`,
+exactly as the scan itself treats it.
 
 ## How matching works
 
@@ -689,7 +744,7 @@ artist never stops the rest of the scan.
 python3 -m pytest        # or: python3 -m pytest -q
 ```
 
-650 tests, no network access, no real credentials, both APIs mocked, and no
+692 tests, no network access, no real credentials, both APIs mocked, and no
 downloader ever executed. They cover
 name and title normalization, edition versus version markers, deluxe/expanded/
 remaster matching, track overlap, the singles rules, alternate-version

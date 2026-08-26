@@ -7,6 +7,7 @@ and the assertions are about the argv that would have been executed.
 from __future__ import annotations
 
 import sys
+from dataclasses import replace
 
 import pytest
 
@@ -22,9 +23,19 @@ from dropwatch.models import (
     DECISION_MISSING,
     DECISION_OWNED,
     Ownership,
+    ReleaseDate,
 )
-from dropwatch.rip_ui import NOT_RUN, build_command, order_queue, pending, run_rip
+from dropwatch.rip_ui import (
+    NOT_RUN,
+    build_command,
+    in_scope,
+    order_queue,
+    pending,
+    run_rip,
+    scope_note,
+)
 from dropwatch.secrets import Secret
+from dropwatch.state import ScanScope
 
 ALBUM_URL = "https://www.deezer.com/album/302127"
 
@@ -64,6 +75,44 @@ def rip_config(tmp_path) -> Config:
         navidrome_password=Secret("not-a-real-password"),
         cache_path=tmp_path / "state.sqlite3",
     )
+
+
+FAVORITES_SCAN = ScanScope(favorites=True)
+
+
+@pytest.fixture
+def mixed_queue(store):
+    """What a full scan followed by a favourites scan leaves behind.
+
+    The favourites scan only refreshes the artists it covered, so the earlier
+    scan's non-favourite releases stay in the queue. The album is the one that
+    sorts first, so an unfiltered walk opens on it.
+    """
+    store.save_missing(
+        [
+            {
+                "id": "302127",
+                "artist": "Not Starred",
+                "title": "Older Album",
+                "type": "Album",
+                "date": "2024-06-02",
+                "ownership": Ownership.MISSING.value,
+                "url": ALBUM_URL,
+                "favorites": False,
+            },
+            {
+                "id": "825535241",
+                "artist": "Starred Artist",
+                "title": "Starred EP",
+                "type": "EP",
+                "date": "2024-07-18",
+                "ownership": Ownership.MISSING.value,
+                "url": "https://www.deezer.com/album/825535241",
+                "favorites": True,
+            },
+        ]
+    )
+    return store
 
 
 class FakeRun:
@@ -518,6 +567,259 @@ class TestPending:
     def test_an_entry_without_an_id_survives(self):
         """It cannot have been decided, so it cannot have been suppressed."""
         assert pending([{"title": "T"}], {"": DECISION_BLOCKED}) == [{"title": "T"}]
+
+
+class TestScopeMirrorsTheLastScan:
+    """One rule: the walk offers what the last scan reported.
+
+    The stored queue is the union of every scan, so an earlier, wider scan's
+    releases stay in it. They must not be walked while a narrower scan is the
+    most recent thing the user saw.
+    """
+
+    ENTRIES = [
+        {"id": "1", "artist": "Alpha", "type": "Album", "date": "2025-04-18",
+         "favorites": True},
+        {"id": "2", "artist": "Beta", "type": "Single", "date": "2023-01-01",
+         "favorites": False},
+        {"id": "3", "artist": "Gamma", "type": "EP", "date": "2024"},
+    ]
+
+    def test_an_unnarrowed_scope_keeps_everything(self):
+        assert in_scope(self.ENTRIES, ScanScope()) == self.ENTRIES
+
+    def test_favorites_keeps_only_what_a_favourites_scan_found(self):
+        assert [e["id"] for e in in_scope(self.ENTRIES, FAVORITES_SCAN)] == ["1"]
+
+    def test_an_entry_from_before_the_flag_counts_as_full_library(self):
+        """It carries no flag because it predates scans recording their scope,
+        and full-library is what it was."""
+        assert in_scope([{"id": "3"}], FAVORITES_SCAN) == []
+
+    def test_types_keep_only_the_types_the_scan_reported(self):
+        kept = in_scope(self.ENTRIES, ScanScope(types=frozenset({"Album", "EP"})))
+        assert [e["id"] for e in kept] == ["1", "3"]
+
+    def test_artists_keep_only_the_artists_the_scan_covered(self):
+        kept = in_scope(self.ENTRIES, ScanScope(artists=("alpha",)))
+        assert [e["id"] for e in kept] == ["1"]
+
+    def test_artist_matching_folds_the_name(self):
+        """The same fold the scan filtered the library with."""
+        kept = in_scope([{"artist": "Bj\u00f6rk"}], ScanScope(artists=("bjork",)))
+        assert len(kept) == 1
+
+    def test_a_cutoff_drops_older_releases(self):
+        kept = in_scope(self.ENTRIES, ScanScope(since=ReleaseDate.parse("2024")))
+        assert [e["id"] for e in kept] == ["1", "3"]
+
+    def test_imprecise_and_unknown_dates_survive_a_cutoff(self):
+        """Matching the scan: excluded on a technicality is worse than shown."""
+        entries = [{"id": "y", "date": "2024"}, {"id": "u", "date": "unknown"}]
+        kept = in_scope(entries, ScanScope(since=ReleaseDate.parse("2024-06-01")))
+        assert [e["id"] for e in kept] == ["y", "u"]
+
+    def test_the_axes_stack(self):
+        kept = in_scope(
+            self.ENTRIES,
+            ScanScope(favorites=True, types=frozenset({"Album"}),
+                      since=ReleaseDate.parse("2024"), artists=("Alpha",)),
+        )
+        assert [e["id"] for e in kept] == ["1"]
+
+
+class TestScopeIsReadFromTheStore:
+    """`rip` replays the scan's record, so a setting alone cannot re-scope it."""
+
+    def test_the_walk_offers_only_favourites(
+        self, mixed_queue, rip_config, runner, monkeypatch, capsys
+    ):
+        """The reported bug: it opened on the album from the earlier full scan,
+        because albums sort ahead of EPs."""
+        mixed_queue.save_scan_scope(FAVORITES_SCAN)
+        drive(monkeypatch, ["r"])
+        run_rip(mixed_queue, rip_config)
+        assert [call[-1] for call in runner.calls] == [
+            "https://www.deezer.com/album/825535241"
+        ]
+        assert "Older Album" not in capsys.readouterr().out
+
+    def test_a_later_wide_scan_offers_everything_again(
+        self, mixed_queue, rip_config, runner, monkeypatch, capsys
+    ):
+        mixed_queue.save_scan_scope(FAVORITES_SCAN)
+        mixed_queue.save_scan_scope(ScanScope())
+        drive(monkeypatch, ["a"])
+        run_rip(mixed_queue, rip_config)
+        assert len(runner.calls) == 2
+        assert "Older Album" in capsys.readouterr().out
+
+    def test_a_saved_favorites_setting_does_not_narrow_a_wide_scan(
+        self, mixed_queue, rip_config, runner, monkeypatch, capsys
+    ):
+        """The `--all-artists` case. Under the old setting-driven scope this
+        hid the whole queue and advised re-scanning favourites — the opposite
+        of what the user had just asked for."""
+        mixed_queue.save_scan_scope(ScanScope())  # what `scan --all-artists` records
+        drive(monkeypatch, ["a"])
+        run_rip(mixed_queue, replace(rip_config, favorites_only=True))
+        assert len(runner.calls) == 2
+        assert "Older Album" in capsys.readouterr().out
+
+    def test_the_walk_offers_only_the_scanned_artist(
+        self, mixed_queue, rip_config, runner, monkeypatch, capsys
+    ):
+        """`scan --artist X` leaves everyone else's releases in the queue, so
+        without this the walk opens on somebody the user did not ask about."""
+        mixed_queue.save_scan_scope(ScanScope(artists=("Starred Artist",)))
+        drive(monkeypatch, ["a"])
+        run_rip(mixed_queue, rip_config)
+        assert [call[-1] for call in runner.calls] == [
+            "https://www.deezer.com/album/825535241"
+        ]
+        assert "Older Album" not in capsys.readouterr().out
+
+    def test_no_recorded_scope_narrows_nothing(
+        self, queued, rip_config, runner, monkeypatch
+    ):
+        """A queue from before scopes were recorded still walks in full."""
+        drive(monkeypatch, ["a"])
+        run_rip(queued, rip_config)
+        assert len(runner.calls) == 2
+
+    def test_an_unreadable_record_narrows_nothing(self, queued, rip_config, runner,
+                                                  monkeypatch):
+        """Walking a narrower list than asked for is worse than ignoring it."""
+        queued.set_meta("last_scan_scope", "{not json")
+        drive(monkeypatch, ["a"])
+        run_rip(queued, rip_config)
+        assert len(runner.calls) == 2
+
+
+class TestScopeNote:
+    """A walk shorter than the last scan's results explains itself."""
+
+    def test_an_unnarrowed_scope_says_nothing(self):
+        assert scope_note(ScanScope()) == ""
+
+    @pytest.mark.parametrize(
+        "scope,expected",
+        [
+            (ScanScope(favorites=True), " (favourites only)"),
+            (ScanScope(since=ReleaseDate.parse("2024")), " (since 2024)"),
+            (ScanScope(types=frozenset({"Album"})), " (albums only)"),
+            (ScanScope(types=frozenset({"EP"})), " (EPs only)"),
+            (ScanScope(types=frozenset({"Album", "EP"})), " (albums and EPs only)"),
+            (ScanScope(artists=("Radiohead",)), " (Radiohead)"),
+            (ScanScope(artists=("A", "B")), " (A and B)"),
+            (ScanScope(artists=("A", "B", "C", "D")), " (A, B and 2 others)"),
+        ],
+    )
+    def test_each_axis_is_named(self, scope, expected):
+        assert scope_note(scope) == expected
+
+    def test_types_are_named_in_the_report_s_order(self):
+        """Not the set's, which is arbitrary."""
+        assert scope_note(ScanScope(types=frozenset({"Single", "Album"}))) == (
+            " (albums and singles only)"
+        )
+
+    def test_every_axis_together(self):
+        note = scope_note(
+            ScanScope(favorites=True, since=ReleaseDate.parse("2024"),
+                      types=frozenset({"Album"}), artists=("Radiohead",))
+        )
+        assert note == " (Radiohead, favourites only, albums only, since 2024)"
+
+    def test_the_count_line_carries_it(
+        self, mixed_queue, rip_config, runner, monkeypatch, capsys
+    ):
+        mixed_queue.save_scan_scope(FAVORITES_SCAN)
+        drive(monkeypatch, ["q"])
+        run_rip(mixed_queue, rip_config)
+        out = capsys.readouterr().out
+        assert "1 release(s) from the last scan (favourites only)." in out
+
+
+class TestScopeHidesTheWholeQueue:
+    """The message names the filter responsible, not just "run a scan"."""
+
+    def test_favorites_names_the_widening_scan(self, queued, rip_config, capsys):
+        """`queued` predates the flag, so nothing in it is a favourite."""
+        queued.save_scan_scope(FAVORITES_SCAN)
+        assert run_rip(queued, rip_config) == ExitCode.OK
+        out = capsys.readouterr().out
+        assert "2 release(s) in the queue, none of them from a favourites scan" in out
+        assert "scan --all-artists" in out
+        assert "Run a scan first" not in out
+
+    def test_a_cutoff_says_which_filter_did_it(self, store, rip_config, capsys):
+        store.save_missing([{"id": "1", "artist": "A", "title": "T",
+                             "type": "Album", "date": "2009-01-01"}])
+        store.save_scan_scope(ScanScope(since=ReleaseDate.parse("2024")))
+        assert run_rip(store, rip_config) == ExitCode.OK
+        out = capsys.readouterr().out
+        assert "none released on or after 2024" in out
+        assert "Re-scan without the cutoff" in out
+        assert "favourites" not in out  # not the filter responsible
+
+    def test_types_say_which_filter_did_it(self, store, rip_config, capsys):
+        store.save_missing([{"id": "1", "artist": "A", "title": "T",
+                             "type": "Single", "date": "2025-01-01"}])
+        store.save_scan_scope(ScanScope(types=frozenset({"Album"})))
+        assert run_rip(store, rip_config) == ExitCode.OK
+        out = capsys.readouterr().out
+        assert "none of them albums" in out
+        assert 'config set types ""' in out
+
+    def test_artists_say_which_filter_did_it(self, store, rip_config, capsys):
+        store.save_missing([{"id": "1", "artist": "A", "title": "T",
+                             "type": "Album", "date": "2025-01-01"}])
+        store.save_scan_scope(ScanScope(artists=("Radiohead",)))
+        assert run_rip(store, rip_config) == ExitCode.OK
+        out = capsys.readouterr().out
+        assert "none of them by Radiohead" in out
+        assert "Re-scan without the artist filter" in out
+
+    def test_only_the_responsible_axes_are_blamed(self, store, rip_config, capsys):
+        """Favourites passes something; the cutoff is what empties the walk."""
+        store.save_missing([{"id": "1", "artist": "A", "title": "T", "type": "Album",
+                             "date": "2009-01-01", "favorites": True}])
+        store.save_scan_scope(
+            ScanScope(favorites=True, since=ReleaseDate.parse("2024"))
+        )
+        assert run_rip(store, rip_config) == ExitCode.OK
+        out = capsys.readouterr().out
+        assert "none released on or after 2024" in out
+        assert "favourites scan" not in out
+
+    def test_an_empty_intersection_falls_back_to_the_whole_scope(
+        self, store, rip_config, capsys
+    ):
+        """Each axis passes something on its own; only together do they empty
+        the walk, so no single filter can honestly be named."""
+        store.save_missing([
+            {"id": "1", "artist": "A", "title": "Old favourite", "type": "Album",
+             "date": "2009-01-01", "favorites": True},
+            {"id": "2", "artist": "B", "title": "New stranger", "type": "Album",
+             "date": "2025-01-01", "favorites": False},
+        ])
+        store.save_scan_scope(
+            ScanScope(favorites=True, since=ReleaseDate.parse("2024"))
+        )
+        assert run_rip(store, rip_config) == ExitCode.OK
+        out = capsys.readouterr().out
+        assert "none within the last scan's scope" in out
+        assert "Re-scan more widely" in out
+
+    def test_a_fully_decided_queue_is_still_told_apart(
+        self, queued, rip_config, capsys
+    ):
+        """Scope hides nothing here — the user has simply answered it all."""
+        for entry in queued.load_missing():
+            queued.set_release_decision(entry["id"], DECISION_OWNED)
+        assert run_rip(queued, rip_config) == ExitCode.OK
+        assert "every release from the last scan is decided" in capsys.readouterr().out
 
 
 class TestFailures:

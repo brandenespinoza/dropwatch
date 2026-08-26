@@ -72,6 +72,7 @@ rejected for a reason that still holds.
 | One cache lifetime for everything | Short enough to catch new releases means re-fetching thousands of immutable album records daily |
 | A bare `dropwatch` meaning `scan` | Scanning contacts two servers and takes minutes; it should be asked for by name |
 | Recording a successful rip as "owned" | The tool would be inferring ownership from its own action — precisely what "the library is the sole authority" forbids |
+| Scoping the `rip` walk by the standing settings rather than the last scan | `scan --all-artists` under a saved `favorites = true` reported everything, then hid all of it from the walk and advised re-scanning favourites |
 
 ---
 
@@ -201,35 +202,51 @@ The queue is filtered when **read**, not when written, on two axes:
   on whatever sorts first across that union, routinely something the current
   scope excludes. **(Invariant.)**
 
-Scope has two axes, honoured differently because they are different kinds of
-thing — and that difference is the rule, not an inconsistency:
+Scope is **one rule with no exceptions**: the walk offers what the last scan
+reported. The scan records the scope it resolved to — not the flags as typed,
+since a flag and the setting it overrode are the same fact by then — and `rip`
+replays that record. **(Invariant.)**
 
-| Axis | Followed as | Why |
+An earlier design made this two rules, following the standing `favorites`
+setting but the last scan's `--since`, on the reasoning that a standing
+preference is the user's current declaration of interest. It was wrong, and the
+way it was wrong is worth keeping: `scan --all-artists` under a saved
+`favorites = true` printed a full report, then handed `rip` a scope that hid
+every line of it and advised re-scanning favourites — the opposite of what had
+just been asked for. Settings scope the *scan*. Once a scan has run, its
+results are the only thing a walk can be faithful to, and a setting changed
+afterwards describes a scan that never happened.
+
+| Axis | Replayed via | Recorded |
 |---|---|---|
-| `favorites` | The setting as it stands **now** | A standing preference; the user's current declaration of interest is the authority |
-| `--since` | The cutoff **the last scan used** | A per-run flag with no stored setting, so there is no current value to follow — only the last one typed |
+| `--artist` | The entry's own `artist`, folded as the scan folded it | With the scope |
+| `--favorites` | A flag stamped on each entry the scan wrote | Per entry, plus the scope |
+| `--type` | The entry's own `type` | With the scope |
+| `--since` | The entry's own `date` | With the scope |
+| `--limit` | *Nothing* | Not recorded |
 
-The two need different machinery, and the asymmetry is worth understanding
-before changing either. Favourite-ness is not derivable from a stored entry, so
-each entry records whether a favourites-restricted scan found it; that flag is
-what makes the question answerable without contacting Navidrome, which `rip`
-must never do. An entry stored before scope was recorded carries no flag and
-counts as full-library, which is what it was. A date cutoff needs no such flag:
-it is a predicate on the release date the entry already carries, so it applies
-correctly even to entries written by a scan that used no cutoff — which is
-precisely the case that leaks. The cutoff is recorded once per scan, and
-**cleared when the flag is absent**, so "no cutoff" is a state the walk reads
-rather than the mere absence of a record.
+The asymmetry in that table is the part worth understanding before changing
+any of it. Three axes are predicates over fields a stored entry already
+carries, so they apply correctly even to entries written by a scan that used no
+such filter — which is precisely the case that leaks. Favourite-ness is not
+derivable from an entry and only Navidrome knows it, so it is stamped on at
+write time; `rip` must never contact Navidrome to ask. An entry stored before
+scopes were recorded carries no flag and counts as full-library, which is what
+it was. `--limit` is excluded on principle rather than convenience: it truncates
+how much work a scan does rather than describing which releases belong in the
+results, so there is no predicate to replay and replaying one would be a lie.
+
+The scope is written **whole on every scan**, so a filter the user dropped is
+cleared by the same write that stores the ones they kept. "No cutoff" is a
+state the walk reads, never the mere absence of a record. An unreadable record
+narrows nothing: walking a shorter list than was asked for hides releases
+silently, while ignoring a corrupt record only offers a few extra.
+**(Invariant.)**
 
 The date comparison is `ReleaseDate.on_or_after`, the same function the scan
 filters with, so the walk and the report cannot disagree about a partial date.
 An imprecise or unknown date passes rather than being excluded on a
 technicality. **(Invariant.)**
-
-`--artist`, `--limit` and `--type` are deliberately *not* filtered here. They
-have no standing setting and no cheap predicate over a stored entry, so their
-effect on a walk is simply the entries the scan wrote. A queue mixing artists
-scanned under different filters is the accepted cost of queues that accumulate.
 
 Ordering is applied at read time for the same reason, and the type sequence is
 taken from the report's own `GROUP_ORDER` rather than restated, so the walk and

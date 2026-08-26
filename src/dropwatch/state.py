@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .models import DECISIONS, DECISION_OWNED
+from .models import DECISIONS, DECISION_OWNED, DatePrecision, ReleaseDate
 from .normalize import artist_key
 
 log = logging.getLogger("dropwatch.state")
@@ -75,6 +75,16 @@ CREATE TABLE IF NOT EXISTS meta (
 STABLE_KEY_PREFIXES = ("album:", "album_tracks:")
 STABLE_MAX_AGE_HOURS = 24 * 30
 
+#: Meta key holding the scope the last scan ran with, so `rip` can replay it.
+#: Lives here rather than in `scan` so the walk can read it without importing
+#: the scanner, which would drag in both API clients.
+LAST_SCAN_SCOPE = "last_scan_scope"
+
+#: Meta keys the schema owns. `set_meta` refuses them: clearing
+#: `schema_version` would silently reset the store to v1 and re-run every
+#: migration on the next open, which no caller could plausibly intend.
+RESERVED_META_KEYS = frozenset({"schema_version"})
+
 STATUS_CONFIRMED = "confirmed"
 #: The stored value stays "ignored": it predates the command being named
 #: `block`, and rewriting it would invalidate every existing state file.
@@ -82,6 +92,58 @@ STATUS_BLOCKED = "ignored"
 
 
 SCHEMA_VERSION = 3
+
+
+@dataclass(frozen=True)
+class ScanScope:
+    """What the last scan actually covered, so `rip` can replay it.
+
+    One record rather than a setting per axis, because the rule is one rule:
+    the walk offers what the last scan reported. A scan writes the whole record
+    every time, so a filter the user dropped is cleared by the same write that
+    stores the ones they kept — "no cutoff" is a state the walk reads, never
+    the mere absence of one.
+
+    Three of the four axes are predicates over a stored entry's own fields and
+    need nothing else recorded here. Favourite-ness is the exception: it is not
+    derivable from an entry, and `rip` must never contact Navidrome to ask, so
+    the scan stamps each entry it writes with the answer.
+    """
+
+    favorites: bool = False
+    since: ReleaseDate | None = None
+    types: frozenset[str] = frozenset()
+    artists: tuple[str, ...] = ()
+
+    def to_json(self) -> dict:
+        return {
+            "favorites": self.favorites,
+            "since": str(self.since) if self.since is not None else None,
+            "types": sorted(self.types),
+            "artists": list(self.artists),
+        }
+
+    @classmethod
+    def from_json(cls, raw: object) -> ScanScope:
+        """Rebuild a stored scope, ignoring anything unreadable.
+
+        Every field falls back to "not narrowing". Walking a shorter list than
+        the user asked for is worse than ignoring a corrupt record: the first
+        silently hides releases, the second only offers a few extra.
+        """
+        if not isinstance(raw, dict):
+            return cls()
+        since = ReleaseDate.parse(raw.get("since"))
+        types = raw.get("types")
+        artists = raw.get("artists")
+        return cls(
+            favorites=bool(raw.get("favorites")),
+            since=None if since.precision is DatePrecision.UNKNOWN else since,
+            types=(
+                frozenset(str(t) for t in types) if isinstance(types, list) else frozenset()
+            ),
+            artists=tuple(str(a) for a in artists) if isinstance(artists, list) else (),
+        )
 
 
 @dataclass(frozen=True)
@@ -277,6 +339,50 @@ class Store:
                 (str(SCHEMA_VERSION),),
             )
             self._conn.commit()
+
+    # --- scan metadata -----------------------------------------------------
+
+    def set_meta(self, key: str, value: str | None) -> None:
+        """Record one fact about the last scan. `None` clears it.
+
+        The `meta` table also holds the schema version, so the keys the schema
+        owns are refused outright rather than merely left alone by convention:
+        a stray clear there would reset the store to v1 and re-run every
+        migration on the next open.
+        """
+        if key in RESERVED_META_KEYS:
+            raise ValueError(f"{key!r} belongs to the schema and cannot be set here")
+        with self._lock:
+            if value is None:
+                self._conn.execute("DELETE FROM meta WHERE key = ?", (key,))
+            else:
+                self._conn.execute(
+                    "INSERT INTO meta(key, value) VALUES(?, ?) "
+                    "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                    (key, value),
+                )
+            self._conn.commit()
+
+    def get_meta(self, key: str) -> str | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT value FROM meta WHERE key = ?", (key,)
+            ).fetchone()
+        return row["value"] if row else None
+
+    def save_scan_scope(self, scope: ScanScope) -> None:
+        """Record what the scan covered. Written whole, so nothing lingers."""
+        self.set_meta(LAST_SCAN_SCOPE, json.dumps(scope.to_json()))
+
+    def load_scan_scope(self) -> ScanScope:
+        """The last scan's scope, or an unnarrowed one if there is none."""
+        raw = self.get_meta(LAST_SCAN_SCOPE)
+        if not raw:
+            return ScanScope()
+        try:
+            return ScanScope.from_json(json.loads(raw))
+        except ValueError:
+            return ScanScope()
 
     # --- artist mappings ---------------------------------------------------
 

@@ -195,6 +195,34 @@ only `o` claims it is in your library, exactly as in `fix`.
 A release already decided either way is left out of the next walk — decisions
 are applied when the queue is read, so one made after the scan still counts.
 
+Scope is applied the same way, under one rule: **the walk offers what the last
+scan reported.** A scan only refreshes the artists it covered, so an earlier,
+wider scan's releases stay in the queue; those are filtered out here, and the
+count line names whatever is narrowing — `(favourites only, since 2024)`.
+Nothing is deleted: widen the scan and the releases return.
+
+| Narrowing | Replayed from the last scan as |
+|---|---|
+| `--artist` | The artist names it was restricted to, matched the way the scan matched them |
+| `--favorites` | Whether it was a favourites-only scan |
+| `--type` | The release types it reported |
+| `--since` | The cutoff it used, or none if it used none |
+| `--limit` | *Not replayed* — it caps how many artists are scanned rather than which releases belong in the results |
+
+Settings scope the scan, not the walk: `favorites` and `types` reach `rip` only
+through the scan that read them, so `scan --all-artists` walks everything even
+with `favorites = true` saved, and changing a setting re-scopes nothing until
+you scan again.
+
+Only favourite-ness is recorded per entry, because nothing in a stored release
+implies it and `rip` never contacts Navidrome. Artist, type and date are already
+on the entry, so those three apply correctly even to entries written by an
+earlier, wider scan. Imprecise and unknown dates pass a cutoff, exactly as in
+the scan.
+
+When the scope hides the queue entirely, `rip` names the filter responsible and
+how to widen it, rather than advising a scan that would change nothing.
+
 Order matches the report: albums, then EPs, then singles, then unclassified,
 newest first within each group. Less precise dates fall below the fully dated
 releases they overlap and undated ones come last, exactly as they print.
