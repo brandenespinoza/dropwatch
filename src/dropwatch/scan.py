@@ -189,10 +189,17 @@ class Scanner:
         self.store = store
         self.config = config
         self.resolver = ArtistResolver(provider, store)
+        #: The favourites the last `read_library` resolved to, for the scope
+        #: record. Held here rather than returned because `read_library`'s
+        #: list is the run's work queue, which `--limit` truncates. Stays None
+        #: for a scan that never asked who the favourites were, which is not
+        #: the same as a favourites scan that found none.
+        self._favorite_artists: tuple[str, ...] | None = None
 
     # --- library -----------------------------------------------------------
 
     def read_library(self, options: ScanOptions) -> list[LocalArtist]:
+        self._favorite_artists = None
         artists = self.client.get_artists()
         albums = self.client.get_all_albums()
 
@@ -252,6 +259,10 @@ class Scanner:
                 skipped,
             )
         log.info("Scanning %d of %d favourite artists", len(kept), len(starred))
+        # Recorded here, before `--artist` and `--limit` are applied, because
+        # this answers "who was a favourite when the scan ran" rather than
+        # "how many of them did this run get through".
+        self._favorite_artists = tuple(a.name for a in kept)
         return kept
 
     def load_local_tracks(self, artist: LocalArtist) -> int:
@@ -311,11 +322,10 @@ class Scanner:
         self._clear_progress(options)
 
         result.missing = dedupe_results(result.missing, lambda item: item.release_type)
-        # Favourite-ness is stamped per entry because the queue below is a
-        # merge: releases found under `--favorites` and releases left behind by
-        # an earlier full scan coexist in it, and unlike type or date it cannot
-        # be recovered from a stored entry — only Navidrome knows, and `rip`
-        # never asks it anything.
+        # No favourite-ness is stamped here. It used to be, and it went stale:
+        # an entry outlives the artist's time as a favourite, and no later
+        # favourites scan covers that artist to correct it. The scope record
+        # carries the names instead, and is rewritten whole on every scan.
         fresh_missing = [
             {
                 "id": item.release.id,
@@ -325,7 +335,6 @@ class Scanner:
                 "date": str(item.release.release_date),
                 "ownership": item.ownership.value,
                 "url": item.release.link,
-                "favorites": options.favorites,
             }
             for item in result.missing
         ]
@@ -376,6 +385,7 @@ class Scanner:
                 since=options.since,
                 types=frozenset(t.value for t in options.types or ()),
                 artists=tuple(options.artist_filters),
+                favorite_artists=self._favorite_artists,
             )
         )
         return result

@@ -73,6 +73,7 @@ rejected for a reason that still holds.
 | A bare `dropwatch` meaning `scan` | Scanning contacts two servers and takes minutes; it should be asked for by name |
 | Recording a successful rip as "owned" | The tool would be inferring ownership from its own action — precisely what "the library is the sole authority" forbids |
 | Scoping the `rip` walk by the standing settings rather than the last scan | `scan --all-artists` under a saved `favorites = true` reported everything, then hid all of it from the walk and advised re-scanning favourites |
+| Stamping favourite-ness onto each stored entry instead of recording the names | The stamp outlived the artist's time as a favourite, and no later favourites scan covered them to correct it, so `rip` offered releases the scan had not reported |
 
 ---
 
@@ -220,7 +221,7 @@ afterwards describes a scan that never happened.
 | Axis | Replayed via | Recorded |
 |---|---|---|
 | `--artist` | The entry's own `artist`, folded as the scan folded it | With the scope |
-| `--favorites` | A flag stamped on each entry the scan wrote | Per entry, plus the scope |
+| `--favorites` | The favourite artist names the scan resolved to | With the scope |
 | `--type` | The entry's own `type` | With the scope |
 | `--since` | The entry's own `date` | With the scope |
 | `--limit` | *Nothing* | Not recorded |
@@ -229,12 +230,28 @@ The asymmetry in that table is the part worth understanding before changing
 any of it. Three axes are predicates over fields a stored entry already
 carries, so they apply correctly even to entries written by a scan that used no
 such filter — which is precisely the case that leaks. Favourite-ness is not
-derivable from an entry and only Navidrome knows it, so it is stamped on at
-write time; `rip` must never contact Navidrome to ask. An entry stored before
-scopes were recorded carries no flag and counts as full-library, which is what
-it was. `--limit` is excluded on principle rather than convenience: it truncates
-how much work a scan does rather than describing which releases belong in the
-results, so there is no predicate to replay and replaying one would be a lie.
+derivable from an entry and only Navidrome knows it, so the scan records the
+names it resolved to and the walk replays them, exactly as `--artist` does;
+`rip` must never contact Navidrome to ask. `--limit` is excluded on principle
+rather than convenience: it truncates how much work a scan does rather than
+describing which releases belong in the results, so there is no predicate to
+replay and replaying one would be a lie.
+
+The names are captured **before `--artist` and `--limit` narrow the run**, so
+the record describes who was a favourite rather than how many of them that run
+got through. A record with no names at all — written before they were kept —
+narrows nothing, while an empty list is a favourites scan that resolved to no
+one and narrows to nothing. Those two must stay distinguishable: collapsing
+them either hides the whole queue or leaks it. **(Invariant.)**
+
+An earlier design stamped a boolean on each entry as it was written instead.
+It is worth knowing why that failed, because it looks simpler and is not: a
+stamp describes the artist at write time and has no way to stop being true. Once
+an artist stopped being a favourite, no favourites scan covered them again, so
+the merge could never purge the entry and the walk kept offering a release the
+scan no longer reported — the exact failure the scope exists to prevent. The
+lesson generalises: **a fact copied onto a stored entry cannot be corrected by
+a run that no longer visits it, so scope belongs in the scope record.**
 
 The scope is written **whole on every scan**, so a filter the user dropped is
 cleared by the same write that stores the ones they kept. "No cutoff" is a

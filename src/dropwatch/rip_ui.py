@@ -99,17 +99,24 @@ def in_scope(entries: list[dict], scope: ScanScope) -> list[dict]:
     Three axes are predicates over fields the entry already carries, so they
     apply correctly even to entries an earlier, wider scan wrote — precisely
     the case that leaks. Favourite-ness is the exception: nothing in a stored
-    entry implies it and `rip` never contacts Navidrome, so it relies on the
-    flag the scan stamped on.
+    entry implies it and `rip` never contacts Navidrome, so the walk replays
+    the artist names the scan recorded, exactly as it does for `--artist`.
     """
     kept = entries
     if scope.artists:
         wanted = {fold(name) for name in scope.artists}
         kept = [e for e in kept if fold(str(e.get("artist") or "")) in wanted]
-    if scope.favorites:
-        # An entry written before scans recorded their scope carries no flag
-        # and counts as full-library, which is what it was.
-        kept = [e for e in kept if e.get("favorites")]
+    if scope.favorites and scope.favorite_artists is not None:
+        # Membership of the recorded set, not a flag stamped on the entry. A
+        # flag described the artist at write time and stayed that way after
+        # they stopped being a favourite, so nothing ever purged the entry and
+        # the walk kept offering what the scan no longer reported.
+        # `None` is a record written before the names were kept and narrows
+        # nothing; an empty tuple is a scan that found no favourites and
+        # narrows to nothing. Testing the truthiness of the tuple would merge
+        # the two and leak the whole queue in the second case.
+        starred = {fold(name) for name in scope.favorite_artists}
+        kept = [e for e in kept if fold(str(e.get("artist") or "")) in starred]
     if scope.types:
         kept = [e for e in kept if str(e.get("type") or "") in scope.types]
     if scope.since is not None:
@@ -305,7 +312,10 @@ def _narrowings(scope: ScanScope) -> list[_Narrowing]:
     if scope.favorites:
         active.append(
             _Narrowing(
-                ScanScope(favorites=True),
+                # Carries the names too: this axis on its own is the artists
+                # the scan resolved to, and without them it narrows nothing
+                # and could never be blamed for emptying the walk.
+                ScanScope(favorites=True, favorite_artists=scope.favorite_artists),
                 "favourites only",
                 "none of them from a favourites scan",
                 f"  Re-scan every artist: `{program} scan --all-artists`.",

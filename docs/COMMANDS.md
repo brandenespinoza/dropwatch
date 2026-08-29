@@ -204,7 +204,7 @@ Nothing is deleted: widen the scan and the releases return.
 | Narrowing | Replayed from the last scan as |
 |---|---|
 | `--artist` | The artist names it was restricted to, matched the way the scan matched them |
-| `--favorites` | Whether it was a favourites-only scan |
+| `--favorites` | The artists that were favourites when it ran |
 | `--type` | The release types it reported |
 | `--since` | The cutoff it used, or none if it used none |
 | `--limit` | *Not replayed* — it caps how many artists are scanned rather than which releases belong in the results |
@@ -214,11 +214,13 @@ through the scan that read them, so `scan --all-artists` walks everything even
 with `favorites = true` saved, and changing a setting re-scopes nothing until
 you scan again.
 
-Only favourite-ness is recorded per entry, because nothing in a stored release
-implies it and `rip` never contacts Navidrome. Artist, type and date are already
-on the entry, so those three apply correctly even to entries written by an
-earlier, wider scan. Imprecise and unknown dates pass a cutoff, exactly as in
-the scan.
+Artist, type and date are already on the stored release, so those three apply
+correctly even to entries written by an earlier, wider scan. Favourite-ness is
+not, and `rip` never contacts Navidrome, so a favourites scan records the
+artists it found starred and the walk replays that list. Unstar an artist and
+their releases leave the walk at the next favourites scan, even though no scan
+covers them any more to remove them from the queue. Imprecise and unknown dates
+pass a cutoff, exactly as in the scan.
 
 When the scope hides the queue entirely, `rip` names the filter responsible and
 how to widen it, rather than advising a scan that would change nothing.

@@ -15,6 +15,7 @@ from dropwatch.deezer import DeezerProvider
 from dropwatch.errors import ConnectionTimeoutError
 from dropwatch.models import ReleaseDate, ReleaseType
 from dropwatch.navidrome import NavidromeClient
+from dropwatch.rip_ui import in_scope
 from dropwatch.report import build_summary, print_summary, render_table, sort_releases
 from dropwatch.scan import ScanOptions, Scanner
 from dropwatch.state import ScanScope
@@ -459,19 +460,57 @@ class TestMissingQueueIsPersisted:
             },
         )
 
-    def test_the_queue_stamps_each_entry_with_favourite_ness(self, scanner):
-        """The one axis `rip` cannot recover from a stored entry, so a full
-        scan must not leave releases looking like a favourites scan found them."""
+    def test_the_queue_stamps_nothing_about_favourite_ness(self, scanner):
+        """Entries carry no favourite-ness of their own. A stamp described the
+        artist at write time and had no way to stop being true."""
         self._one_album(scanner)
         scanner.run(ScanOptions(progress=False))
-        assert [e["favorites"] for e in scanner.store.load_missing()] == [False]
+        assert all("favorites" not in e for e in scanner.store.load_missing())
 
+    def test_a_favourites_scan_records_who_the_favourites_were(self, scanner):
+        """The one axis `rip` cannot recover from a stored entry, so the scan
+        records the names and the walk replays them."""
+        self._one_album(scanner)
         scanner.nav_http.add(
             "getStarred2.view",
             subsonic({"starred2": {"artist": [{"id": "1", "name": "Radiohead"}]}}),
         )
         scanner.run(ScanOptions(progress=False, favorites=True))
-        assert [e["favorites"] for e in scanner.store.load_missing()] == [True]
+        scope = scanner.store.load_scan_scope()
+        assert scope.favorites is True
+        assert scope.favorite_artists == ("Radiohead",)
+
+    def test_an_ex_favourite_leaves_the_walk_when_it_leaves_the_favourites(
+        self, scanner
+    ):
+        """The reported bug, end to end.
+
+        A favourites scan finds a release; the artist is later unstarred. No
+        favourites scan covers them again, so the merge can never purge the
+        entry — the walk has to stop offering it on the strength of the scope
+        alone, or it offers a release the scan did not report.
+        """
+        self._one_album(scanner)
+        scanner.nav_http.add(
+            "getStarred2.view",
+            subsonic({"starred2": {"artist": [{"id": "1", "name": "Radiohead"}]}}),
+        )
+        scanner.run(ScanOptions(progress=False, favorites=True))
+        assert [e["title"] for e in scanner.store.load_missing()] == ["New Album"]
+
+        # Unstarred, and a second favourite scanned in their place so the run
+        # still has something to cover.
+        scanner.nav_http.add(
+            "getStarred2.view",
+            subsonic({"starred2": {"artist": [{"id": "2", "name": "Nobody"}]}}),
+        )
+        scanner.run(ScanOptions(progress=False, favorites=True))
+
+        # The merge cannot reach it: the artist was not covered by that run.
+        assert [e["title"] for e in scanner.store.load_missing()] == ["New Album"]
+        # The walk must exclude it anyway.
+        store = scanner.store
+        assert in_scope(store.load_missing(), store.load_scan_scope()) == []
 
     def test_the_scan_records_the_scope_it_ran_with(self, scanner):
         """`rip` replays this, so it must describe the scan as resolved — not

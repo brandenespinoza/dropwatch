@@ -107,13 +107,26 @@ class ScanScope:
     Three of the four axes are predicates over a stored entry's own fields and
     need nothing else recorded here. Favourite-ness is the exception: it is not
     derivable from an entry, and `rip` must never contact Navidrome to ask, so
-    the scan stamps each entry it writes with the answer.
+    the scan records the favourite artists it resolved to and the walk replays
+    that list — the same mechanism `artists` already uses.
+
+    An earlier design stamped a boolean on each stored entry instead. It went
+    stale: once an artist stopped being a favourite no favourites scan covered
+    them again, so nothing could ever purge the entry, and the walk kept
+    offering releases the scan no longer reported. A name list cannot go stale
+    because the whole record is rewritten on every scan.
     """
 
     favorites: bool = False
     since: ReleaseDate | None = None
     types: frozenset[str] = frozenset()
     artists: tuple[str, ...] = ()
+    #: The favourite artists as the scan resolved them, captured before
+    #: `--artist` and `--limit` narrow the run: this describes who was a
+    #: favourite, not how much work the scan chose to do. `None` means no scan
+    #: has recorded them yet, which is not the same as a scan that found none
+    #: — the first narrows nothing, the second narrows to nothing.
+    favorite_artists: tuple[str, ...] | None = None
 
     def to_json(self) -> dict:
         return {
@@ -121,6 +134,9 @@ class ScanScope:
             "since": str(self.since) if self.since is not None else None,
             "types": sorted(self.types),
             "artists": list(self.artists),
+            "favorite_artists": (
+                None if self.favorite_artists is None else list(self.favorite_artists)
+            ),
         }
 
     @classmethod
@@ -136,6 +152,7 @@ class ScanScope:
         since = ReleaseDate.parse(raw.get("since"))
         types = raw.get("types")
         artists = raw.get("artists")
+        favorite_artists = raw.get("favorite_artists")
         return cls(
             favorites=bool(raw.get("favorites")),
             since=None if since.precision is DatePrecision.UNKNOWN else since,
@@ -143,6 +160,16 @@ class ScanScope:
                 frozenset(str(t) for t in types) if isinstance(types, list) else frozenset()
             ),
             artists=tuple(str(a) for a in artists) if isinstance(artists, list) else (),
+            # A record written before the list existed has no names to replay,
+            # and stays None so it narrows nothing: that self-corrects on the
+            # next scan and errs toward offering a few extra releases rather
+            # than hiding them. An empty list is different — a scan that
+            # resolved to no favourites at all — and narrows to nothing.
+            favorite_artists=(
+                tuple(str(a) for a in favorite_artists)
+                if isinstance(favorite_artists, list)
+                else None
+            ),
         )
 
 
