@@ -3,10 +3,11 @@
 Why this tool is shaped the way it is, and what must stay true as it changes.
 
 **This document does not describe what DropWatch does.** [README.md](../README.md)
-is the guide and [COMMANDS.md](COMMANDS.md) is the reference; both are better at
-it, and a third description would only drift from the other two. What lives here
-is the reasoning that has nowhere else to go: constraints that must survive
-future edits, and alternatives already tried and rejected.
+is the overview, [GUIDE.md](GUIDE.md) is the walkthrough and
+[COMMANDS.md](COMMANDS.md) is the reference; all three are better at it, and a
+fourth description would only drift from the others. What lives here is the
+reasoning that has nowhere else to go: constraints that must survive future
+edits, and alternatives already tried and rejected.
 
 It began as a product specification written before the code. That job is done —
 the tool is built — so what remains is the part that is still load-bearing.
@@ -28,12 +29,14 @@ rules is wrong.
 
 These define the tool more than any feature does.
 
-**It is not a downloader and must not become one.** No acquisition or
-decryption code, no downloader shipped, none depended on. `rip` starts a program
-the user named in a setting, in a separate process, and reads only its exit
-status. Vendoring, importing or reimplementing a downloader violates this,
-however convenient it would be to make `rip` work out of the box.
-**(Invariant.)**
+**Acquisition and decryption code must never enter this codebase.** `rip` is a
+real downloader integration and a headline feature: it starts a program the user
+named in a setting — streamrip by default — in a separate process, and reads only
+its exit status. What is forbidden is implementing the download *here*.
+Vendoring, importing, reimplementing or depending on a downloader violates this,
+however convenient it would be to make `rip` work out of the box. The boundary
+is what keeps that tool's credentials, its failure modes and its dependency tree
+on the far side of a process boundary. **(Invariant.)**
 
 **MusicBrainz is not used, in any form.** No APIs, databases, dumps,
 identifiers, tags, Picard, libraries sourcing from it, services repackaging it,
@@ -59,7 +62,7 @@ rejected for a reason that still holds.
 
 | Alternative | Why not |
 |---|---|
-| Vendor or import a downloader so `rip` works out of the box | Forfeits the process boundary, the credential isolation, the zero-dependency install and the "not a downloader" guarantee — all at once |
+| Vendor or import a downloader so `rip` works out of the box | Forfeits the process boundary, the credential isolation and the zero-dependency install — all at once |
 | MusicBrainz for better artist/release identity | See above. Deezer's catalogue is the only source, and dependencies are the enforcement mechanism |
 | `--env-file` flag | Duplicated `$DROPWATCH_ENV` exactly while appearing in every subcommand's help |
 | `./.env` in the working directory | Let an unrelated project file silently decide which server got scanned |

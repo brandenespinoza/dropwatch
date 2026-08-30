@@ -5,17 +5,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # DropWatch
 
 Lists Deezer releases by artists in a Navidrome library that the user appears not
-to own. Python 3.10+, standard library only, no runtime dependencies.
+to own, then hands the ones they pick to a downloader they configured. Python
+3.10+, standard library only, no runtime dependencies.
 
 ## Hard rules
 
 These are not preferences. Each has already been decided against, with reasons
 in [docs/DESIGN.md](docs/DESIGN.md); breaking one builds a different tool.
 
-- **Never make it a downloader.** No acquisition or decryption code, no
-  downloader shipped or depended on. `rip` runs a command the user configured,
-  in a separate process, and reads only its exit status. Do not vendor, import
-  or reimplement one — not even to make `rip` work without setup.
+- **Integrate downloaders; never implement one.** `rip` is a real downloader
+  integration and a headline feature: it hands a release URL to a command the
+  user configured — streamrip by default — in a separate process, and reads only
+  its exit status. What must not enter this codebase is the download itself: no
+  acquisition or decryption code, and no downloader vendored, imported,
+  reimplemented or added as a dependency, not even to make `rip` work without
+  setup. That boundary is what keeps the install dependency-free and the
+  downloader's credentials out of this tool.
 - **Never use MusicBrainz**, directly or through a dependency. Deezer's
   catalogue is the only metadata source. The zero-dependency install is part of
   how this is enforced — think hard before adding any dependency.

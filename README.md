@@ -20,9 +20,6 @@ Singles (1)
 3 releases require review
 ```
 
-Every command and flag in one place: [docs/COMMANDS.md](docs/COMMANDS.md).
-Why it works the way it does: [docs/DESIGN.md](docs/DESIGN.md).
-
 ## What it does
 
 - Reads your artists, albums and tracks from Navidrome over its Subsonic API.
@@ -31,31 +28,30 @@ Why it works the way it does: [docs/DESIGN.md](docs/DESIGN.md).
 - Works out which releases are not in your library, being careful about
   reissues, deluxe editions and singles whose tracks you already own.
 - Prints the result sorted globally by release date, newest first.
+- Hands the releases you pick to a downloader you configured —
+  [streamrip](https://github.com/nathom/streamrip) by default — with
+  `dropwatch rip`. See
+  [Downloading with streamrip](docs/GUIDE.md#downloading-with-streamrip).
 
 ## What it does not do
 
-It does not download music, decrypt anything, or touch your Deezer account. It
-is not a daemon, a service or a web app — it runs when you run it and then
-exits. It never writes to Navidrome: no scans, ratings, favourites, playlists
-or tag edits. Your music files are never opened.
+It never writes to Navidrome: no scans, ratings, favourites, playlists or tag
+edits, and your music files are never opened. It never touches your Deezer
+account — the public catalog API needs no credentials and none are sent. It does
+not use MusicBrainz, in any form. It is not a daemon or a service: it runs when
+you run it and then exits.
 
-`dropwatch rip` is the one place it hands work outwards, and it is still not a
-downloader: it runs a command *you* configured, in a separate process, with
-credentials it never sees and cannot read. No downloader ships with it, none is
-a dependency, and the default command does nothing at all unless you have
-already installed and configured the tool it names. See
-[Downloading what it finds](#downloading-what-it-finds).
-
-It does not use MusicBrainz, in any form, directly or through a dependency.
-Deezer's own catalogue is the only metadata source.
+It does not download music either. `dropwatch rip` runs a command *you*
+configured, in a separate process, with credentials it never sees and cannot
+read. No downloader ships with it and none is a dependency.
 
 ## Requirements
 
 - Python 3.10 or newer (macOS ships 3.9; `brew install python` if `python3 -V`
   reports anything older).
-- No third-party runtime dependencies. The standard library covers HTTP, JSON
+- No third-party runtime dependencies — the standard library covers HTTP, JSON
   and SQLite.
-- Network access from your Mac to Navidrome, and to `api.deezer.com`.
+- Network access to Navidrome, and to `api.deezer.com`.
 
 ## Install
 
@@ -63,43 +59,42 @@ Deezer's own catalogue is the only metadata source.
 ./install.sh
 ```
 
-That builds an isolated environment under `~/.local/share/dropwatch`, copies
-the application into it, and links the `dropwatch` command into
-`~/.local/bin`. Nothing is added to your system Python, and **the source
-directory is not needed afterwards** — move it or delete it and the command
-keeps working.
+That builds an isolated environment under `~/.local/share/dropwatch`, copies the
+application into it, and links the `dropwatch` command into `~/.local/bin`.
+Nothing is added to your system Python, and **the source directory is not needed
+afterwards** — move it or delete it and the command keeps working.
 
-Then:
-
-```bash
-dropwatch setup     # enter your Navidrome details; it tests the connection
-dropwatch scan      # list missing releases
-```
-
-Re-run `./install.sh` any time to upgrade in place. To remove it:
-
-```bash
-./install.sh --uninstall
-```
-
-Settings and cache are left alone by `--uninstall`; it tells you how to remove
-those too if you want a complete wipe.
-
-If `~/.local/bin` is not on your `PATH`, the installer says so and prints the
-one line to add.
+Re-run `./install.sh` any time to upgrade in place. `./install.sh --uninstall`
+removes it, leaving your settings and cache alone.
 
 <details>
 <summary>Running from the source directory instead</summary>
 
-No install needed — `python3 dropwatch.py` takes exactly the same
-arguments, and reads `.env` from the project directory if one is there.
+No install needed — `python3 dropwatch.py` takes exactly the same arguments, and
+reads `.env` from the project directory if one is there.
 
 ```bash
 python3 dropwatch.py setup
-python3 dropwatch.py
+python3 dropwatch.py scan
 ```
 
 </details>
+
+## Quickstart
+
+```bash
+dropwatch setup     # enter your Navidrome details; it tests the connection
+dropwatch scan      # list the releases you appear not to own
+dropwatch fix       # answer what the scan could not decide
+dropwatch rip       # walk the list, downloading the ones you pick
+```
+
+`scan` is the one you will run most. `fix` exists because a scan never guesses:
+artists it could not pin down on Deezer, and releases it could not judge, wait
+for you instead of being silently resolved either way. `rip` walks what the last
+scan reported and hands each release you choose to your downloader.
+
+Full walkthrough: [docs/GUIDE.md](docs/GUIDE.md).
 
 ## Where things live
 
@@ -112,683 +107,32 @@ python3 dropwatch.py
 
 All absolute, so it behaves the same from any directory.
 
-### Changing settings later
-
-Re-run `dropwatch setup` to walk through everything again — it offers your
-current values as defaults, so pressing Enter keeps them.
-
-For a single change:
-
-```bash
-dropwatch config                         # every setting and where it came from
-dropwatch config set url http://your-server:4533
-dropwatch config set timeout 30
-dropwatch config password                # prompted, never echoed
-dropwatch config unset timeout           # back to the default
-dropwatch config path                    # where the file lives
-```
-
-`config` shows provenance, which is what you want when a change appears
-not to take effect:
-
-```text
-Settings file: /Users/you/.config/dropwatch/.env
-
-  url            http://music:4533
-  username       branden
-  password       ********
-  timeout        20
-  cache-path     /Users/you/.local/state/dropwatch/state.sqlite3
-  cache-max-age  24
-  types          all
-  favorites      false
-  rip-command    rip url {url}
-```
-
-A shell variable shadowing the file is called out where it happens, since that
-is the case worth knowing about:
-
-```text
-  url            http://other:9000  (from $DROPWATCH_URL)
-```
-
-The password is never accepted as a command-line argument — it would land in
-your shell history and be visible to `ps`. `config password` prompts for it
-instead. Everything is stored in a plain, hand-editable file at mode 600.
-
-Settings are: `url`, `username`, `password`, `timeout`, `cache-path`,
-`cache-max-age`, `types`, `favorites`, `rip-command`.
-
-### Only care about albums?
-
-If you collect complete albums rather than singles, set that once:
-
-```bash
-dropwatch config set types album,ep
-```
-
-Every run then reports only those, without repeating `--type` forever. An
-explicit `--type` on the command line still wins — including `--type all`, for
-one run that reports albums, EPs, singles and unclassified releases alike:
-
-```bash
-dropwatch scan --type all
-```
-
-To go back to everything for good, widen the setting or remove it; both mean
-the same thing:
-
-```bash
-dropwatch config set types all
-dropwatch config unset types
-```
-
-
-`DROPWATCH_URL` is the base URL only — `/rest` is appended for you. Any host,
-port or path works. A hostname on a private network or VPN resolves exactly
-as it would in your browser; this tool never configures networking itself.
-
-Settings are read from the first source that has them:
-
-1. Real environment variables
-2. The settings file — `~/.config/dropwatch/.env`, or `$DROPWATCH_ENV` if set
-
-That is the whole chain. Settings are managed with `setup` and `config`, so
-there is no `--env-file` flag and no `./.env` in the working directory to go
-around them — a stray `.env` in a project directory should not be able to
-decide which server gets scanned.
-
-When nothing is found, the error names the file it expected. Environment
-variables win over the file, and both `setup` and `config set` warn you when one
-is shadowing what you just saved.
-
-### Checking the connection
-
-```bash
-dropwatch check
-```
-
-That validates the URL, connects, authenticates, and confirms the endpoint is
-Subsonic-compatible. If something is wrong it says which thing:
-
-| Message | Meaning |
-|---|---|
-| Could not resolve the hostname | DNS cannot find the host |
-| Connection refused | Host is up, nothing listening on that port |
-| No route to host | Host is offline or off the tailnet |
-| Connection timed out | Host is unreachable or asleep |
-| TLS certificate verification failed | HTTPS certificate problem |
-| Navidrome rejected the credentials | Username or password is wrong |
-| ... is not a Subsonic-compatible API | URL points at something else |
-| Navidrome returned 404 | URL path is wrong |
-
-Network failures and credential failures are never conflated.
-
-## Running a scan
-
-```bash
-dropwatch scan
-```
-
-That is the whole normal workflow. Results go to stdout; warnings, unresolved
-artists and the review section go to stderr, so `dropwatch scan > missing.txt`
-gives you a clean file.
-
-Useful flags:
-
-```bash
-dropwatch scan --since 2024            # a year...
-dropwatch scan --since 2026-06         # ...a month...
-dropwatch scan --since 2026-06-15      # ...or an exact date
-dropwatch scan --type album --type ep  # skip singles
-dropwatch scan --type all              # every type, whatever the setting says
-dropwatch scan --artist "Björk"        # one artist
-dropwatch scan --favorites             # only your Navidrome favourites
-dropwatch scan --flat                  # no type groups, pure date order
-dropwatch scan --refresh               # ignore the cache, refetch
-dropwatch scan -v                      # progress detail on stderr
-```
-
-Each result line ends with the release's Deezer URL, so the output composes with
-whatever you want to do next.
-
-While a scan runs, findings appear on stderr as each artist is resolved:
-
-```text
-[47/196] Fleetwood Mac — 3 missing (2 albums, 1 single)
-[52/196] Ghost — unresolved, 2 candidates
-[58/196] Alabama — 12 missing (4 albums, 8 singles), 3 to review
-[61/196] Genesis
-```
-
-Artists with nothing new stay off the scroll, so the list stays dense. These are
-summaries, not the report — the sorted table still arrives at the end, on
-stdout. Nothing about the live view touches stdout, so `dropwatch scan > out.txt`
-is unaffected. `--no-progress` turns it off, and it is skipped automatically
-when stderr is not a terminal.
-
-Running from a checkout instead? `python3 dropwatch.py` and
-`python3 -m dropwatch` take exactly the same arguments.
-
-### Local state
-
-Cached API responses, artist mappings and block lists live in one SQLite file
-at `~/.local/state/dropwatch/state.sqlite3` (override with `DROPWATCH_CACHE_PATH`). It is
-an absolute path, so it is shared no matter where you run the command from.
-Cached entries expire after 24 hours by default (`DROPWATCH_CACHE_MAX_AGE`) — but
-not all of them. An album's metadata and track list cannot change once the
-album is out, so those are kept for 30 days; discography listings and artist
-searches, which exist precisely to change, use the configured lifetime. That is
-what makes a second run cheap. `--refresh` overrides both.
-
-```bash
-dropwatch cache                  # where it is, how old it is
-dropwatch cache --clear          # drop cached API responses
-dropwatch cache --reset-mappings # drop artist mappings
-```
-
-Clearing the cache never deletes your manual mappings, and a failed refresh
-never discards data that is already cached.
-
-### What a scan leaves for you
-
-A scan produces two kinds of "I don't know": *which Deezer artist is your
-"Ghost"* — there are six — and *do you already own this release*. It never
-guesses at either.
-
-```bash
-dropwatch status
-```
-
-```text
-Needs you
-  5 artist(s) could not be matched to Deezer
-  3 release(s) need a decision
-
-  Work through them:  dropwatch fix
-```
-
-`dropwatch fix` walks both piles in order: artists first, then releases.
-`dropwatch status --decided` lists everything you have already answered,
-each with the command that reverses it.
-
-#### Artists
-
-```bash
-dropwatch fix
-```
-
-```text
-Algorhythm
-  7 Deezer artists share this name with equal catalogue overlap
-  1. Algorhythm  [id 461342]  427 fans
-       Illusion
-       Island
-       Time And Space
-  2. Algorhythm  [id 324774101]  34 fans
-       Illusion
-       Make It Last
-       Island
-  number(s) to map  [s]kip  [b]lock  [d] enter an id or URL  [q]uit
-  >
-```
-
-Each candidate lists a few album titles, with any that match your library shown
-first — which Ghost is yours is answerable from a track listing and almost never
-from a fan count.
-
-Your options per artist:
-
-| Answer | Effect |
-|---|---|
-| `1` | Map to that Deezer artist |
-| `1 2` | Map to **both** — their discographies are merged |
-| Enter, or `s` | Leave it unresolved; you will be asked again next time |
-| `b` | Block permanently, never reported again |
-| `c` | Clear everything known about this artist, back to unresolved |
-| `d 1160651` or a Deezer URL | Use an ID you found yourself |
-| `q` | Stop here, keeping what you have already decided |
-
-**Selecting several is the interesting one.** Deezer routinely splits one act
-across duplicate artist entries, each holding part of the catalogue — the two
-Algorhythm entries above share *Illusion* and *Island*. Mapping both merges
-their discographies and de-duplicates the overlap, so you get complete coverage
-without double entries.
-
-**Got one wrong?** A mapped artist never returns to the unresolved list, so
-re-open it by name:
-
-```bash
-dropwatch fix "Ghost"
-```
-
-That searches Deezer fresh, shows your current mapping, and lets you pick
-again, clear it, or block the artist.
-
-The same things are available non-interactively:
-
-```bash
-dropwatch map "Ghost" 1160651              # one
-dropwatch map "Ghost" 1160651 4859761      # several, merged
-dropwatch block --artist "Karaoke Hits Vol 3"
-dropwatch unmap "Ghost"                    # clear, back to unresolved
-dropwatch status --decided                 # list what is saved
-```
-
-Mappings persist between runs and always win over automatic matching. A normal
-scan is never interactive.
-
-#### Releases
-
-Releases the matcher cannot settle go to a review section rather than being
-claimed as missing. `fix` reaches them after the artists:
-
-```bash
-dropwatch fix
-```
-
-```text
-─── 1/5 ───
-Alabama — American Christmas
-  Album, 2017-10-06
-  title closely resembles local album 'Christmas' but is not identical
-  https://www.deezer.com/album/558123
-  [o] I own it   [m] I don't, report it   [b]lock   [s]kip   [u]ndo   [q]uit
-```
-
-`o` suppresses it for good, `m` promotes it into the main list, `b` blocks it,
-`s` leaves it undecided, `u` clears a decision you made earlier. Decisions are
-stored against the Deezer release ID, so the same question is never asked twice.
-
-`o` and `b` both make the release go away, and the difference is what you are
-saying. `o` records that it is in your library; `b` records only that you do not
-want to hear about it — for a karaoke edition, a territorial duplicate, or an
-album you have decided you are never going to buy. Reach for `b` whenever the
-honest answer to "do you own it?" is no but you still want it gone. It is the
-same block `dropwatch block --album` applies, and `unblock --album` or `u`
-clears it. `b` blocks in the artist half of `fix` and in `rip` too, so every
-prompt agrees on what the key means.
-
-### Blocking one release from the results
-
-Any release in the main list can be dismissed without going through review —
-press `b` on it during `dropwatch rip`, or name it directly. Every result line
-ends with its Deezer URL, so copy that (or just the number at the end):
-
-```bash
-dropwatch block --album https://www.deezer.com/album/558123
-dropwatch unblock --album 558123          # undo
-```
-
-```text
-Blocking Alabama — American Christmas. It will not be reported again.
-```
-
-That works for any release type — album, EP or single.
-
-Use `fix --album` instead when you want to record what you actually know about
-the release rather than just muting it:
-
-```bash
-dropwatch fix --album 558123 --own       # I have it; stop reporting it
-dropwatch fix --album 558123 --missing   # I don't; always report it
-dropwatch fix --album 558123 --clear     # forget the decision
-```
-
-Both suppress a release, but only `--own` records a claim about your library.
-Without a flag it shows the release and prompts. `dropwatch cache
---reset-decisions` forgets all of them.
-
-## Downloading what it finds
-
-A scan tells you what is missing. `dropwatch rip` walks that list and, for each
-release you choose, runs a command you configured against its Deezer URL:
-
-```bash
-dropwatch scan          # produces the list
-dropwatch rip           # walk it, downloading the ones you pick
-```
-
-```text
-2 release(s) from the last scan.
-Press Enter to skip one.
-
-─── 1/2 ───
-Fleetwood Mac — Rumours
-  Album, 2024-06-02
-  https://www.deezer.com/album/302127
-  [r] rip   [s]kip   [o] I own it   [b]lock   [a]ll remaining   [q]uit
-  > r
-
-  $ rip url https://www.deezer.com/album/302127
-
-  [the downloader's own output appears here]
-  ✓ done
-```
-
-| Answer | Effect |
-|---|---|
-| `r` | Run the command for this release, then move on |
-| Enter, or `s` | Skip it |
-| `o` | I already have it — stop reporting it |
-| `b` | Block it — never offer or report it again |
-| `a` | Run it, and everything remaining, without asking again |
-| `q` | Stop here |
-
-`o` and `b` are there because the walk is where you are already looking at the
-release. A karaoke edition, a territorial duplicate, or something the matcher
-was simply wrong about would otherwise mean leaving the walk, copying the URL
-out of the report, running `fix --album <id> --own` or `block --album`, and
-starting again.
-
-They are the same two decisions `fix` records, and the difference between them
-is the same one: `o` says the release is in your library, `b` says only that you
-do not want to hear about it. `fix --album <id> --clear` and `unblock --album
-<id>` reverse them.
-
-A release you have answered either way is not offered on the next walk — the
-queue is the last scan's conclusion, and decisions made since are applied when
-it is read. That includes decisions you made through `fix`.
-
-Enter skips rather than downloads, because holding a key down to get through a
-long list should not start forty downloads. Releases run one at a time with the
-downloader's output passed straight through, so its progress bars work and you
-see a failure when it happens. One failed release does not stop the walk, and
-Ctrl-C abandons the download in progress and returns you to the prompt.
-
-You are asked in the same order the results printed: **albums first, then EPs,
-then singles**, and newest first within each. So the full-length records arrive
-before the singles, and this year's before the back catalogue — you can work
-down until you have had enough and quit knowing what you skipped was the
-smaller, older material. Imprecise dates fall below the fully dated releases
-they overlap, and undated ones sit at the end of their group.
-
-**DropWatch does not download anything itself.** It runs whatever
-`rip-command` names, in a separate process. The default targets
-[streamrip](https://github.com/nathom/streamrip):
-
-```bash
-dropwatch config set rip-command "rip url {url}"     # the default
-```
-
-`{url}` is where the Deezer URL goes, and it can sit anywhere in the command:
-
-```bash
-dropwatch config set rip-command "rip url {url} --quality 2"
-dropwatch config set rip-command "/usr/local/bin/my-fetch --out /music {url}"
-dropwatch config set rip-command "~/bin/queue-it.sh {url}"
-```
-
-Any tool that accepts a URL works, including a script of your own — nothing
-about the downloader is known to DropWatch beyond the command line you gave it.
-Whatever credentials it needs live in its configuration, not this one, and are
-never read, stored or logged here. The template is validated when you set it,
-split into arguments without a shell, and the URL is always a single argument
-however it is written.
-
-### Ripping records nothing
-
-A download is not a claim that you own something, so ripping writes nothing to
-local state and the release keeps appearing in the results. It leaves on its
-own once Navidrome indexes the new files and you run another scan — your
-library stays the authority on what you have, which is the same rule the rest
-of the tool follows.
-
-`o` and `b` are the exceptions, and they are exceptions because you asked for
-them: answering a question records a decision, the way it does everywhere else.
-Downloading a release still tells the tool nothing — a successful rip is not
-turned into an `o` on your behalf.
-
-If you want a release gone before then, that is what the existing decisions are
-for:
-
-```bash
-dropwatch fix --album 302127 --own      # I have it now; stop reporting it
-```
-
-`dropwatch rip` needs a terminal, and never touches Navidrome or Deezer itself
-— the queue is local, saved by the last scan.
-
-### What the walk offers
-
-**`rip` offers what the last scan reported.** That is the whole rule.
-
-It needs stating because the queue is not simply the last scan's results. A
-scan covering part of the library leaves the rest of the queue alone — which is
-what stops a single-artist rescan from discarding everyone else's pending
-releases — so a narrow scan sits on top of whatever earlier, wider scans left
-behind. Without this rule the walk would open on some release the scan you just
-ran had nothing to do with.
-
-Four things narrow a scan, and the walk replays all four:
-
-```bash
-dropwatch scan --favorites --since 2024
-dropwatch rip      # the same window the scan just printed
-
-dropwatch scan --artist "Radiohead" --type album
-dropwatch rip      # Radiohead albums, not everyone else's singles
-```
-
-`--limit` is the exception, because it is not really a filter: it caps how many
-artists get scanned rather than saying which releases belong in the results, so
-there is nothing to replay.
-
-Settings scope the *scan*, not the walk. If you keep `favorites = true` and want
-everything for once, widen the scan and the walk follows:
-
-```bash
-dropwatch scan --all-artists
-dropwatch rip      # everything, despite the saved setting
-```
-
-Changing a setting on its own does not re-scope a walk — the queue is a scan's
-conclusion, so nothing about it changes until you scan again.
-
-Whatever is narrowing, the count line says so, and a walk shorter than the
-results you last saw explains itself:
-
-```text
-9 release(s) from the last scan (favourites only, since 2024).
-```
-
-If the scope hides the queue entirely, `rip` names the filter responsible
-rather than advising a scan that would change nothing:
-
-```text
-121 release(s) in the queue, none released on or after 2024.
-  Re-scan without the cutoff: `dropwatch scan`.
-```
-
-Nothing is deleted by any of this. Widen the scan and the releases come back.
-
-An imprecise date passes the cutoff rather than being excluded on a
-technicality — a release dated only `2024` is offered under `--since 2024-06`,
-exactly as the scan itself treats it.
-
-## How matching works
-
-**Artists.** Names are compared after folding case, accents, apostrophe styles,
-`&`/`and`, and punctuation, plus a leading-article variant so "The Beatles"
-matches "Beatles". Names are never split on `&`, `and`, `feat.`, `with`, `vs.`
-or commas, because those appear inside real names. A name match alone is not
-enough: candidates are corroborated against your album titles, and the one that
-actually shares releases with your library wins. This matters — searching Deezer
-for "Björk" returns "Björk & Toffe" as the *first* result. Karaoke and tribute
-acts are filtered out. When several same-named artists remain and none matches
-your albums, the artist is reported unresolved rather than guessed.
-
-**Releases.** Titles are decomposed into a base title, cosmetic edition markers
-and meaningful version markers. Edition markers are ignored when deciding
-identity — "Deluxe Edition", "2011 Remaster", "20th Anniversary", "Bonus Track
-Version", "Explicit", territorial editions. Version markers are preserved,
-because they denote a different recording — "Live", "Acoustic", "Remix", "Radio
-Edit", "Instrumental", "Demo", "Mono", "Alternate Take", language versions. So a
-remaster of an album you own is not reported, but a live version of it is.
-
-Beyond titles, releases are compared by recording coverage: each Deezer track is
-looked up against every track you own by that artist, matching on title, version
-marker and duration (±5 s, which absorbs encoder padding without hiding a
-genuinely different edit).
-
-**Singles** get this treatment specifically. A single whose only track is
-already on an album you own is not reported. A single carrying an exclusive
-B-side, a remix, an acoustic take, or a materially different edit *is* reported.
-Where Deezer supplies ISRCs for both a single and an album you own, identical
-ISRCs prove identical recordings and the single is suppressed — but only for the
-tracks of that album you actually hold, since an album released a song at a time
-is listed by Deezer in full long before it can be owned in full. Where recording
-identity cannot be established, the single goes to the review section instead of
-being asserted as missing.
-
-**Duplicates.** Territorial variants, explicit/clean pairs, reissues and repeated
-product listings are collapsed to one canonical entry — the earliest dated one,
-since Deezer duplicates are usually reissues of a single original product. A
-deluxe edition whose extra tracks you already own is treated as owned. Live and
-studio versions are never merged, and a single is never merged into an album of
-the same name.
-
-**Verdicts.** Every release lands on one of: owned, probably owned, missing,
-probably missing, ambiguous, or ignored. Only *missing* and *probably missing*
-reach the main list. *Ambiguous* goes to the review section on stderr. The bias
-is deliberate: a release you actually own being quietly filtered out is a much
-smaller problem than being told to go buy something twice.
-
-### Sorting and grouping
-
-Results are grouped by release type — Albums, then EPs, then Singles, then
-Unclassified — and within each group sorted descending by release date, newest
-first, across all artists. They are never grouped by artist.
-
-The `TYPE` column is kept even though the group heading repeats it, so every
-line stays self-describing when the output is piped somewhere.
-
-For one continuous list sorted purely by date, with no group headings:
-
-```bash
-dropwatch scan --flat
-```
-
-Deezer sometimes gives partial dates (`2019-00-00`), so precision is tracked and
-used as the tiebreak: within the same period, a less precise date sorts *below*
-the fully dated releases it overlaps.
-
-```text
-2024-06-15   full date
-2024-06      month only, below every dated June release
-2024-01-01   full date
-2024         year only, below every dated 2024 release
-unknown      always last
-```
-
-Remaining ties break alphabetically by artist then title, so repeated runs print
-identically.
-
-## Deezer access
-
-**This tool uses `https://api.deezer.com` — Deezer's public, unauthenticated
-catalog API. Classification: public and documented by Deezer, but not covered by
-any stability guarantee, and usable without an account.**
-
-It needs no credentials at all, and never sends any. Artist search, full
-discographies with pagination, album metadata (UPC, label, contributors, track
-counts) and complete track listings with ISRCs are all available anonymously,
-so there is no Deezer account setup to do and nothing to keep up to date.
-
-Nothing here logs in to Deezer, touches a browser profile, or reads cookies.
-
-No third-party Deezer library is used, so there is nothing to audit for hidden
-downloading or decryption behaviour.
-
-All Deezer access is isolated in `src/dropwatch/deezer.py`. Matching,
-classification and reporting only see plain dataclasses, so the provider could
-be replaced without touching them.
-
-### Rate limits
-
-Deezer allows roughly 50 requests per 5 seconds per IP (measured: 60 concurrent
-requests yielded 49 successes and 11 quota errors). Requests are limited to 8/s
-with a small burst, quota errors are retried three times with exponential
-backoff and jitter, and everything is cached. Detail is only fetched for
-releases that still look missing after a cheap first pass, so a second run over
-the same library costs almost nothing.
-
-## Security
-
-- Credentials come from `.env` (git-ignored) or the environment; real
-  environment variables win. Nothing is ever written into source, tests or logs.
-- Navidrome authentication uses Subsonic's salted-token scheme with a fresh salt
-  per request, so your password never appears in a URL, a proxy log or a
-  traceback.
-- Secrets are wrapped in a `Secret` type that redacts itself in `str()`,
-  `repr()`, f-strings, logging and tracebacks, and refuses to be pickled or
-  JSON-serialised.
-- A logging filter scrubs known secret values and credential-shaped URL
-  parameters from every log record, including at `-vv` debug level.
-- `.env` is checked at startup and you are warned if it is readable by other
-  local accounts. The state database is created mode 600.
-- The state file never contains credentials of any kind.
-- `rip-command` is split into arguments with no shell involved, and the release
-  URL is substituted after the split, so it is always exactly one argument and
-  cannot become extra flags. DropWatch never learns the downloader's
-  credentials: it runs a separate program that reads its own configuration.
-
-## Exit codes
-
-| Code | Meaning |
-|---|---|
-| 0 | Success |
-| 1 | Unexpected failure |
-| 2 | Command-line usage error |
-| 3 | Configuration problem |
-| 4 | Navidrome connection or protocol problem |
-| 5 | Navidrome rejected the credentials |
-| 6 | Deezer problem |
-| 7 | Completed, but partially — some artists or albums failed |
-
-Code 7 still prints results; the summary says the output is partial. One failing
-artist never stops the rest of the scan.
-
-## Tests
-
-```bash
-python3 -m pytest        # or: python3 -m pytest -q
-```
-
-692 tests, no network access, no real credentials, both APIs mocked, and no
-downloader ever executed. They cover
-name and title normalization, edition versus version markers, deluxe/expanded/
-remaster matching, track overlap, the singles rules, alternate-version
-detection, duplicate collapsing, ambiguous artist results, manual mappings,
-cache expiry, partial Navidrome and Deezer failures, the connection error
-taxonomy, credential redaction, reverse-chronological sorting with
-incomplete dates, and terminal formatting.
+Credentials come from that `.env` or the environment, are never written into
+source, tests or logs, and are redacted from tracebacks and debug output.
+Navidrome authentication uses Subsonic's salted-token scheme, so your password
+never appears in a URL or a proxy log. Details in
+[docs/DESIGN.md](docs/DESIGN.md).
 
 ## Known limitations
 
 - **Deezer is the whole world.** An artist or release absent from Deezer cannot
-  be reported, and a release Deezer lists for the wrong artist may surface. If
-  your library is heavy on small labels or non-Western catalogues, expect more
-  unresolved artists.
+  be reported. Libraries heavy on small labels or non-Western catalogues will
+  see more unresolved artists.
 - **Local files have no ISRCs.** The Subsonic API does not expose them, so
-  recording identity against your library rests on title, version marker and
-  duration. ISRCs are used only Deezer-side, where both a single and an owned
-  album expose them.
-- **Duration tolerance is a heuristic.** ±5 seconds distinguishes a different
-  edit from encoder padding most of the time, not always. Sources that differ by
-  a long fade may be flagged as different recordings.
-- **Compilations.** A greatest-hits collection whose every track you already own
-  is treated as owned and suppressed. If you want to be told about the product
-  itself, that is the wrong call for you.
-- **"Various Artists"** and similar placeholder artists are skipped entirely.
-- **Deezer's `record_type` is inconsistent.** Track count and total duration are
-  used to correct obvious mislabels, but an EP/album boundary case can land on
-  either side; genuinely undecidable cases print as `Unknown`.
-- **Year-gap heuristic.** An identical title more than a year from your tagged
-  year, with no edition marker, is treated as ambiguous rather than owned. If
-  your year tags are release-date-of-pressing rather than original release, this
-  will put more in the review section.
-- **First run is slow.** A large library means one Deezer search plus a
-  discography per artist, and two more requests per candidate release, against
-  an ~8/s rate limit. `--since` is the effective lever, and live progress shows
-  findings as they arrive. Later runs are served from cache.
+  identity against your library rests on title, version marker and duration
+  (±5 s) — a heuristic, not a proof.
+- **Compilations count as owned.** A greatest-hits collection whose every track
+  you already own is suppressed rather than reported as a product.
+- **Deezer's `record_type` is inconsistent.** Track count and duration correct
+  the obvious mislabels; genuine EP/album boundary cases print as `Unknown`.
+- **The first run is slow.** One Deezer search plus a discography per artist,
+  against an ~8/s rate limit. `--since` is the effective lever; later runs are
+  served from cache.
+
+## Documentation
+
+| | |
+|---|---|
+| [docs/GUIDE.md](docs/GUIDE.md) | How to use it: first scan, reading the report, review, downloading |
+| [docs/COMMANDS.md](docs/COMMANDS.md) | Every command, flag and setting |
+| [docs/DESIGN.md](docs/DESIGN.md) | Why it works the way it does, and what must stay true |

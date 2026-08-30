@@ -177,6 +177,9 @@ setting against the ones you pick. Needs a terminal. Talks to neither Navidrome
 nor Deezer — the queue is local, written by the last scan, and it survives until
 the next one replaces it.
 
+Setting up streamrip, or a downloader of your own, start to finish:
+[GUIDE.md](GUIDE.md#downloading-with-streamrip).
+
 | Answer | Effect |
 |---|---|
 | `r` | Run the command for this release |
