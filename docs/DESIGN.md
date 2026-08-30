@@ -175,6 +175,13 @@ carrying an exclusive B-side, remix, acoustic take, live version or materially
 different edit is. Where recording identity cannot be established, it goes to
 review rather than being asserted as missing. **(Invariant.)**
 
+Only a recording the library actually holds may vouch for another release. An
+album settled as owned on its title alone may be part-owned, and its published
+tracklist may name songs that are not out yet, so ISRC evidence is drawn from
+tracks matched in the library rather than from the album's tracklist. Vouching
+from the tracklist once suppressed exactly the advance singles a scan exists to
+find. **(Invariant.)**
+
 Never collapsed as duplicates: live versus studio, a single versus an album of
 the same name, different artists, or genuinely distinct releases with similar
 titles. **(Invariant.)**
@@ -313,9 +320,9 @@ credentials appear anywhere.
 
 ## Measured Deezer behaviour
 
-Established empirically against the live API before the client was written. Each
-is worked around in `deezer.py`, and none is documented by Deezer — rediscovering
-them costs hours.
+Established empirically against the live API. Each is worked around in
+`deezer.py` or in the matching that consumes it, and none is documented by
+Deezer — rediscovering them costs hours.
 
 - `/album/{id}` embeds **at most 25 tracks** and reports `tracks.next: null`
   even when the album has more. The dedicated `/album/{id}/tracks` endpoint
@@ -332,6 +339,12 @@ them costs hours.
 - Artist search does not rank the obvious match first: searching `Björk` returns
   `Björk & Toffe` (31 fans) ahead of `Björk` (id 630). This is why name matches
   must be corroborated.
+- A **drip-released album is listed in full before it is released**. Kenny
+  Chesney's *Silver Sands Marina* (album `1001816031`, dated 2026-09-25) carried
+  all 11 tracks with ISRCs while only three had been issued, each of those also
+  published as its own single sharing the album track's ISRC — *Goldfish* is
+  `QT8AT2600010` on both. A tracklist is therefore evidence of what the album
+  *will* contain, never of what can be owned.
 
 ## Thresholds
 

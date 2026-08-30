@@ -72,7 +72,7 @@ history and in `ps` output. Use `config password`.
 | `timeout` | `20` | Per-request timeout in seconds. |
 | `cache-path` | `~/.local/state/dropwatch/state.sqlite3` | Where local state lives. |
 | `cache-max-age` | `24` | Lifetime for volatile cache entries. Album track lists are kept 30 days regardless. |
-| `types` | all | Release types to report, comma separated: `album`, `ep`, `single`, `unknown`. |
+| `types` | `all` | Release types to report, comma separated: `album`, `ep`, `single`, `unknown`. `all` is every one of them, and is what an empty value normalises to. |
 | `favorites` | `false` | Scan only artists starred in Navidrome. |
 | `rip-command` | `rip url {url}` | Command `rip` runs per chosen release. `{url}` is replaced with the Deezer URL. |
 
@@ -90,6 +90,9 @@ error: timeout must be a number, got 'abc'
 
 $ dropwatch config set types "SINGLES, albums"
 Set types = album,single  (normalised from 'SINGLES, albums')
+
+$ dropwatch config set types all
+Set types = all
 ```
 
 Precedence, highest first:
@@ -144,7 +147,7 @@ nothing to scan and is skipped; `-v` reports how many.
 | `--artist NAME` | Restrict to this local artist. Repeatable. |
 | `--limit N` | Scan at most N artists. |
 | `--since DATE` | Only consider releases on or after `YYYY`, `YYYY-MM` or `YYYY-MM-DD`. |
-| `--type TYPE` | Only report `album`, `ep`, `single` or `unknown`. Repeatable. Overrides the `types` setting for this run. |
+| `--type TYPE` | Only report `album`, `ep`, `single` or `unknown`. Repeatable. `--type all` reports every type, overriding a narrower `types` setting. Overrides the `types` setting for this run. |
 | `--favorites` | Only artists you have starred in Navidrome. |
 | `--all-artists` | Every artist, overriding a saved `favorites` setting. |
 | `--refresh` | Ignore cached Deezer data and refetch everything. Slow. |

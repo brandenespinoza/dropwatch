@@ -157,6 +157,17 @@ def _check_path(value: str, key: str) -> str:
     return str(path)
 
 
+def _check_release_types(value: str, key: str) -> str:
+    """Canonicalise the `types` setting, spelling the widest value "all".
+
+    An empty value and "all" are the same filter, but only one of them reads
+    as a deliberate choice; storing the word means `config` shows the same
+    thing whether or not the setting was ever written.
+    """
+    names = parse_release_types(value)
+    return ",".join(sorted(names)).lower() if names else ALL_RELEASE_TYPES
+
+
 @dataclass(frozen=True)
 class Setting:
     """One user-facing setting.
@@ -213,9 +224,9 @@ SETTINGS: tuple[Setting, ...] = (
             check=_check_path),
     Setting("cache-max-age", "Cache lifetime in hours", default="24",
             check=_check_positive_number),
-    Setting("types", "Release types to report, comma separated (album, ep, single)",
-            implicit=lambda: "all",
-            check=lambda v, _k: ",".join(sorted(parse_release_types(v))).lower()),
+    Setting("types", "Release types to report, comma separated (album, ep, single, "
+            "unknown) or all",
+            implicit=lambda: ALL_RELEASE_TYPES, check=_check_release_types),
     Setting("favorites", "Scan only artists starred in Navidrome",
             default="false", check=_check_boolean),
     Setting("rip-command", f"Command `rip` runs per release; {URL_PLACEHOLDER} is the Deezer URL",
@@ -402,6 +413,12 @@ def _number(raw: str | None, default: float, key: str) -> float:
     return float(_check_positive_number(raw, key))
 
 
+#: The widest value, accepted by the `types` setting and `--type` alike. Not a
+#: member of RELEASE_TYPE_ALIASES below because it is not a type: it is the
+#: absence of a filter, and mapping it to one would make "all,single" narrower
+#: than "all".
+ALL_RELEASE_TYPES = "all"
+
 #: Accepted spellings for the `types` setting and the --type flag.
 RELEASE_TYPE_ALIASES = {
     "album": "Album",
@@ -416,21 +433,34 @@ RELEASE_TYPE_ALIASES = {
 
 
 def parse_release_types(raw: str | None) -> frozenset[str]:
-    """Parse "album,ep" into canonical type names. Empty means every type."""
+    """Parse "album,ep" into canonical type names.
+
+    The empty set means every type — album, EP, single and unknown alike — and
+    both an empty value and "all" produce it. Every token is still checked
+    before "all" wins, so a typo beside it is rejected rather than swallowed.
+    """
     if not raw or not raw.strip():
         return frozenset()
     names = set()
+    everything = False
     for token in re.split(r"[,\s]+", raw.strip()):
         if not token:
             continue
+        if token.casefold() == ALL_RELEASE_TYPES:
+            everything = True
+            continue
         canonical = RELEASE_TYPE_ALIASES.get(token.casefold())
         if canonical is None:
-            valid = ", ".join(sorted({v.lower() for v in RELEASE_TYPE_ALIASES.values()}))
+            valid = ", ".join(
+                sorted({v.lower() for v in RELEASE_TYPE_ALIASES.values()} | {ALL_RELEASE_TYPES})
+            )
             raise ConfigError(
                 f"Unknown release type {token!r}.", hint=f"Valid types: {valid}"
             )
         names.add(canonical)
-    return frozenset(names)
+    # The widest value wins over anything listed with it: "all,ep" can only
+    # mean every type, and returning the EP alone would silently narrow it.
+    return frozenset() if everything else frozenset(names)
 
 
 def load_dotenv(path: Path) -> dict[str, str]:

@@ -256,12 +256,36 @@ class TestPersistedTypeFilter:
         assert parse_release_types("") == frozenset()
         assert parse_release_types(None) == frozenset()
 
+    def test_all_means_every_type(self):
+        from dropwatch.config import parse_release_types
+
+        assert parse_release_types("all") == frozenset()
+        assert parse_release_types("ALL") == frozenset()
+        # Listed with others it widens rather than narrows.
+        assert parse_release_types("ep,all") == frozenset()
+
+    def test_all_is_still_checked_against_its_neighbours(self):
+        from dropwatch.config import ConfigError, parse_release_types
+
+        with pytest.raises(ConfigError):
+            parse_release_types("all,lp")
+
+    def test_setting_stores_the_widest_value_as_a_word(self, cfg, capsys):
+        main(["config", "set", "types", "all"])
+        assert "Set types = all" in capsys.readouterr().out
+        assert "DROPWATCH_TYPES=all" in cfg.read_text()
+
+    def test_an_empty_value_is_normalised_to_all(self, cfg, capsys):
+        main(["config", "set", "types", ""])
+        assert "Set types = all" in capsys.readouterr().out
+
     def test_unknown_type_is_rejected_with_the_valid_list(self):
         from dropwatch.config import ConfigError, parse_release_types
 
         with pytest.raises(ConfigError) as excinfo:
             parse_release_types("album,lp")
         assert "album" in (excinfo.value.hint or "")
+        assert "all" in (excinfo.value.hint or "")
 
     def test_setting_survives_a_roundtrip(self, cfg, capsys):
         from dropwatch.config import load_config

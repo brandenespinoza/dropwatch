@@ -192,12 +192,14 @@ class TestCoverage:
 
 class TestIsrcRefinement:
     def test_matching_isrcs_suppress_an_advance_single(self):
+        held = LocalIndex(local_artist(albums=[local_album("Album", tracks=[("Track One", 200)])]))
         owned = IsrcIndex()
         owned.add_release(
             deezer_release(
                 "Album", release_id="a1", tracks=[("Track One", 200)],
                 isrcs=["GBAAA0000001"],
-            )
+            ),
+            held,
         )
         single = deezer_release(
             "Track One", release_id="s1", record_type="single",
@@ -212,7 +214,8 @@ class TestIsrcRefinement:
     def test_different_isrc_leaves_the_verdict_alone(self):
         owned = IsrcIndex()
         owned.add_release(
-            deezer_release("Album", release_id="a1", tracks=[("T", 200)], isrcs=["GBAAA0000001"])
+            deezer_release("Album", release_id="a1", tracks=[("T", 200)], isrcs=["GBAAA0000001"]),
+            LocalIndex(local_artist(albums=[local_album("Album", tracks=[("T", 200)])])),
         )
         single = deezer_release(
             "Other", release_id="s1", record_type="single",
@@ -226,9 +229,57 @@ class TestIsrcRefinement:
     def test_missing_isrcs_are_inconclusive(self):
         owned = IsrcIndex()
         owned.add_release(
-            deezer_release("Album", release_id="a1", tracks=[("T", 200)], isrcs=["GBAAA0000001"])
+            deezer_release("Album", release_id="a1", tracks=[("T", 200)], isrcs=["GBAAA0000001"]),
+            LocalIndex(local_artist(albums=[local_album("Album", tracks=[("T", 200)])])),
         )
         single = deezer_release(
             "Other", release_id="s1", record_type="single", tracks=[("Other", 200)]
         )
         assert owned.covers(single) is None
+
+    def test_a_part_owned_album_does_not_vouch_for_a_song_it_lacks(self):
+        """The drip-release case.
+
+        An album released a song at a time is on Deezer in full long before it
+        can be owned in full, and each new song appears as a single and on the
+        album at once. Owning three of its songs must not suppress the single
+        for a fourth that is not out yet.
+        """
+        held = LocalIndex(
+            local_artist(
+                albums=[
+                    local_album(
+                        "Silver Sands Marina",
+                        tracks=[
+                            ("Burn My Boat", 200),
+                            ("Carry On", 210),
+                            ("Silver Sands Marina", 220),
+                        ],
+                    )
+                ]
+            )
+        )
+        published = deezer_release(
+            "Silver Sands Marina", release_id="a1",
+            tracks=[
+                ("Burn My Boat", 200), ("Carry On", 210),
+                ("Silver Sands Marina", 220), ("Goldfish", 230),
+            ],
+            isrcs=[
+                "QT8AT2600006", "QT8AT2600001", "QT8AT2600012", "QT8AT2600010",
+            ],
+        )
+        owned = IsrcIndex()
+        owned.add_release(published, held)
+
+        # The three held recordings vouch; the unreleased fourth does not.
+        assert owned.codes == {"QT8AT2600006", "QT8AT2600001", "QT8AT2600012"}
+
+        single = deezer_release(
+            "Goldfish", release_id="s1", record_type="single",
+            tracks=[("Goldfish", 230)], isrcs=["QT8AT2600010"],
+        )
+        from dropwatch.release_match import Verdict
+
+        refined = refine_with_isrc(Verdict(Ownership.MISSING, "x"), single, owned)
+        assert refined.ownership is Ownership.MISSING

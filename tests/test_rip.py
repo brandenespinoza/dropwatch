@@ -784,7 +784,7 @@ class TestScopeHidesTheWholeQueue:
         assert run_rip(store, rip_config) == ExitCode.OK
         out = capsys.readouterr().out
         assert "none of them albums" in out
-        assert 'config set types ""' in out
+        assert "config set types all" in out
 
     def test_artists_say_which_filter_did_it(self, store, rip_config, capsys):
         store.save_missing([{"id": "1", "artist": "A", "title": "T",

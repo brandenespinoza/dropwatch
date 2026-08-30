@@ -168,10 +168,18 @@ dropwatch config set types album,ep
 ```
 
 Every run then reports only those, without repeating `--type` forever. An
-explicit `--type` on the command line still wins. Unset it to see everything
-again:
+explicit `--type` on the command line still wins — including `--type all`, for
+one run that reports albums, EPs, singles and unclassified releases alike:
 
 ```bash
+dropwatch scan --type all
+```
+
+To go back to everything for good, widen the setting or remove it; both mean
+the same thing:
+
+```bash
+dropwatch config set types all
 dropwatch config unset types
 ```
 
@@ -233,6 +241,7 @@ dropwatch scan --since 2024            # a year...
 dropwatch scan --since 2026-06         # ...a month...
 dropwatch scan --since 2026-06-15      # ...or an exact date
 dropwatch scan --type album --type ep  # skip singles
+dropwatch scan --type all              # every type, whatever the setting says
 dropwatch scan --artist "Björk"        # one artist
 dropwatch scan --favorites             # only your Navidrome favourites
 dropwatch scan --flat                  # no type groups, pure date order
@@ -626,7 +635,9 @@ genuinely different edit).
 already on an album you own is not reported. A single carrying an exclusive
 B-side, a remix, an acoustic take, or a materially different edit *is* reported.
 Where Deezer supplies ISRCs for both a single and an album you own, identical
-ISRCs prove identical recordings and the single is suppressed. Where recording
+ISRCs prove identical recordings and the single is suppressed — but only for the
+tracks of that album you actually hold, since an album released a song at a time
+is listed by Deezer in full long before it can be owned in full. Where recording
 identity cannot be established, the single goes to the review section instead of
 being asserted as missing.
 

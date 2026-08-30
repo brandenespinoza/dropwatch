@@ -132,7 +132,14 @@ behaviour in `DESIGN.md`, it belongs in the other two instead.
 ## Working here
 
 - Tests never touch the network and never execute a downloader — `conftest.py`
-  fakes both APIs. Keep it that way.
+  fakes both APIs. Keep it that way. Build on what it already provides rather
+  than hand-rolling: the `fake_http`, `config` and `store` fixtures, and the
+  `local_artist` / `local_album` / `deezer_release` / `subsonic` builders.
+  `test_entry_points.py` is the exception that *does* spawn a real interpreter,
+  because both import-path mistakes the shim guards against have happened.
+- **`build/` holds a gitignored copy of every source file**, so a repo-wide
+  `grep` returns each symbol twice and the second hit is a stale artefact. Search
+  `src/` and edit only there; `build/lib/dropwatch/` changes nothing.
 - Comments explain **why**, not what — usually the alternative that was rejected
   and the reason. Match that; it is the house style and it carries real
   information.

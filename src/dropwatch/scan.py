@@ -473,7 +473,12 @@ class Scanner:
     def _apply_isrc_evidence(
         self, candidates: list[Judged], settled: list[Judged], index: LocalIndex
     ) -> None:
-        """Let owned albums vouch for singles that look like advance releases."""
+        """Let owned albums vouch for singles that look like advance releases.
+
+        Only recordings the library actually holds vouch: an album settled as
+        owned on its title alone may be part-owned, and its Deezer tracklist
+        may name songs that are not even released yet.
+        """
         if not any(j.verdict.reportable and j.is_single for j in candidates):
             return
 
@@ -484,7 +489,7 @@ class Scanner:
                 self.provider.load_release_detail(judged.release)
             except DropWatchError:
                 continue
-            isrc_index.add_release(judged.release)
+            isrc_index.add_release(judged.release, index)
 
         if not isrc_index.codes:
             return

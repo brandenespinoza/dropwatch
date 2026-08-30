@@ -316,9 +316,25 @@ class IsrcIndex:
 
     codes: set[str] = field(default_factory=set)
 
-    def add_release(self, release: DeezerRelease) -> None:
+    def add_release(self, release: DeezerRelease, local: LocalIndex) -> None:
+        """Index the ISRCs of recordings the library actually holds.
+
+        Deezer's tracklist is the album *as published*. Artists increasingly
+        drip-release an album a song at a time, each new song landing as a
+        single and on the album at once, so that tracklist routinely names
+        recordings that are not out yet and therefore cannot be owned. Taking
+        the whole tracklist on trust let a part-owned album vouch for the very
+        advance singles the user was waiting for, so a track vouches only once
+        the library holds that recording.
+        """
         for track in release.tracks:
-            if track.isrc:
+            if not track.isrc:
+                continue
+            base, versions = track_key(track.title_short or track.title, track.title_version)
+            if not base:
+                continue
+            exact, _ = local.find_recording(base, versions)
+            if any(durations_match(track.duration, t.duration) is True for t in exact):
                 self.codes.add(track.isrc.upper())
 
     def covers(self, release: DeezerRelease) -> bool | None:

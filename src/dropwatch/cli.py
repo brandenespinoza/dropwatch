@@ -20,6 +20,7 @@ from pathlib import Path
 
 from . import __version__
 from .config import (
+    ALL_RELEASE_TYPES,
     SETTINGS,
     SETTINGS_BY_KEY,
     USER_AGENT,
@@ -71,6 +72,10 @@ _TYPE_ALIASES = {
     "singles": ReleaseType.SINGLE,
     "unknown": ReleaseType.UNKNOWN,
 }
+
+#: `--type` also takes the widest value, which is not one of the above: it
+#: names the absence of a filter, the way the `types` setting spells it.
+_TYPE_CHOICES = sorted({*_TYPE_ALIASES, ALL_RELEASE_TYPES})
 
 
 def _global_options() -> argparse.ArgumentParser:
@@ -129,8 +134,8 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         default=[],
         metavar="TYPE",
-        choices=sorted(_TYPE_ALIASES),
-        help="only report these release types (repeatable)",
+        choices=_TYPE_CHOICES,
+        help="only report these release types, or `all` for every one (repeatable)",
     )
     favorites = scan.add_mutually_exclusive_group()
     favorites.add_argument(
@@ -486,15 +491,28 @@ def _deezer_only(config: Config, store: Store) -> DeezerProvider:
     )
 
 
+def _scan_types(args, config: Config) -> set[ReleaseType] | None:
+    """Which types to report: the flag when given, otherwise the setting.
+
+    `None` is every type. The filter is then skipped rather than run against
+    all four, so a release whose type is not one of them cannot be dropped by
+    a filter meant to keep everything.
+    """
+    if args.type:
+        # `all` is the absence of a filter, not a fifth type: listed alongside
+        # others it widens, so it decides the whole flag on its own.
+        if ALL_RELEASE_TYPES in args.type:
+            return None
+        return {_TYPE_ALIASES[t] for t in args.type}
+    if config.release_types:
+        return {t for t in ReleaseType if t.value in config.release_types}
+    return None
+
+
 def cmd_scan(args) -> int:
     config = load_config()
 
-    if args.type:
-        types = {_TYPE_ALIASES[t] for t in args.type}
-    elif config.release_types:
-        types = {t for t in ReleaseType if t.value in config.release_types}
-    else:
-        types = None
+    types = _scan_types(args, config)
     options = ScanOptions(
         artist_filters=args.artist,
         limit=args.limit,

@@ -96,6 +96,40 @@ class TestParser:
         args = build_parser().parse_args(["scan", "--type", "albums", "--type", "single"])
         assert args.type == ["albums", "single"]
 
+    def test_all_is_a_type_choice(self):
+        assert build_parser().parse_args(["scan", "--type", "all"]).type == ["all"]
+
+
+class TestScanTypeSelection:
+    """`--type` beats the setting, and `all` means no filter at all."""
+
+    @staticmethod
+    def _resolve(flag, setting=frozenset()):
+        from types import SimpleNamespace
+
+        from dropwatch.cli import _scan_types
+
+        return _scan_types(SimpleNamespace(type=flag), SimpleNamespace(release_types=setting))
+
+    def test_no_flag_and_no_setting_is_every_type(self):
+        assert self._resolve([]) is None
+
+    def test_flag_narrows(self):
+        from dropwatch.models import ReleaseType
+
+        assert self._resolve(["albums", "ep"]) == {ReleaseType.ALBUM, ReleaseType.EP}
+
+    def test_setting_applies_when_the_flag_is_absent(self):
+        from dropwatch.models import ReleaseType
+
+        assert self._resolve([], frozenset({"Single"})) == {ReleaseType.SINGLE}
+
+    def test_all_overrides_a_narrowing_setting(self):
+        assert self._resolve(["all"], frozenset({"Album"})) is None
+
+    def test_all_wins_over_types_listed_with_it(self):
+        assert self._resolve(["single", "all"]) is None
+
 
 class TestExitCodes:
     def test_distinct_codes_for_distinct_failures(self):

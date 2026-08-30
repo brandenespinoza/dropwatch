@@ -329,8 +329,8 @@ def _narrowings(scope: ScanScope) -> list[_Narrowing]:
                 f"{phrase} only",
                 f"none of them {phrase}",
                 # Names the setting as well as the flag: either can be the
-                # cause, and clearing an already-empty setting is harmless.
-                f'  Re-scan every type: `{program} config set types ""`, '
+                # cause, and widening an already-wide setting is harmless.
+                f"  Re-scan every type: `{program} config set types all`, "
                 f"then `{program} scan`.",
             )
         )
