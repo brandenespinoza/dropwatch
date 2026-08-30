@@ -34,7 +34,7 @@ in [docs/DESIGN.md](docs/DESIGN.md); breaking one builds a different tool.
 ## Commands
 
 ```bash
-python3 -m pytest                                   # 696 tests
+python3 -m pytest                                   # 707 tests
 python3 -m pytest tests/test_rip.py -q              # one file
 python3 -m pytest tests/test_rip.py::TestBuildCommand::test_quoted_arguments_survive
 python3 -m pytest -k scope                          # by name
@@ -136,16 +136,18 @@ load-bearing.
 
 ## Documentation
 
-Three documents, three jobs. Keeping them distinct is what stops them drifting.
+Four documents, four jobs. Keeping them distinct is what stops them drifting.
 
 | File | Owns | Update when |
 |---|---|---|
-| `README.md` | The guide — what it does, worked examples | Behaviour a user would notice changes |
+| `README.md` | The pitch — what it is, install, quickstart, limitations | Install, entry points or a stated limitation changes |
+| `docs/GUIDE.md` | The walkthrough — first scan, reading the report, review, downloading | Behaviour a user would notice changes |
 | `docs/COMMANDS.md` | The reference — every command, flag, setting | Any command-line surface changes |
 | `docs/DESIGN.md` | Invariants, rejected alternatives, measured API quirks | A *rule* changes — rare by design |
 
-A typical feature touches the first two. If you find yourself describing
-behaviour in `DESIGN.md`, it belongs in the other two instead.
+A typical feature touches GUIDE and COMMANDS; README only when the shape of the
+tool changes, not its details. If you find yourself describing behaviour in
+`DESIGN.md`, it belongs in GUIDE or COMMANDS instead.
 
 ## Working here
 
