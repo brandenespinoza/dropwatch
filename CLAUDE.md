@@ -35,18 +35,31 @@ python3 -m pytest tests/test_rip.py::TestBuildCommand::test_quoted_arguments_sur
 python3 -m pytest -k scope                          # by name
 
 python3 dropwatch.py scan --help                    # run from source, no install
-uv tool install --force .                           # push source edits to the installed command
+uv tool install --editable .                        # install `dropwatch` so it tracks this tree
+.claude/backup.sh --dry-run                         # what the next backup would push
 ```
 
 `pytest` is the only dev dependency; no linter or formatter is configured.
 
-The installed `dropwatch` is a **copied snapshot**, not an editable install, so
-source edits do not reach it until reinstalled — hence the `--force` line above.
+The installed `dropwatch` is an **editable** install (a `uv tool` symlinked into
+`~/.local/bin`), so the command runs this working tree directly and source edits
+are live with no reinstall step. `./install.sh` builds a *copied snapshot* instead
+and repoints the same launcher — running it silently replaces the editable install,
+and edits stop reaching `dropwatch` until `uv tool install --editable .` is re-run.
 
 `tests/conftest.py` points `$DROPWATCH_CONFIG_DIR` and `$DROPWATCH_STATE_DIR` at a
 tmp directory and unsets `$DROPWATCH_ENV` for every test, so the suite cannot touch
 real config or state. Set those two by hand to point a manual `dropwatch.py` run at
 scratch state.
+
+## Backups
+
+Every Claude Code session ends by running `.claude/backup.sh`, the `Stop` hook in
+`.claude/settings.json`: it stages everything, commits whatever was left over as
+`Save work in progress — <timestamp>`, and pushes the current branch. Work is never
+stranded on this machine, but those sweep-up messages say nothing useful — commit
+deliberately when a change deserves a name, and the hook only carries the remainder.
+It is safe to run by hand and does nothing when the tree is clean and pushed.
 
 ## Architecture
 
