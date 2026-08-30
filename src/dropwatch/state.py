@@ -91,7 +91,7 @@ STATUS_CONFIRMED = "confirmed"
 STATUS_BLOCKED = "ignored"
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 @dataclass(frozen=True)
@@ -336,6 +336,14 @@ class Store:
                 "SELECT value FROM meta WHERE key = 'schema_version'"
             ).fetchone()
             current = int(row["value"]) if row else 1
+
+            if current < 4:
+                # v3 cached local tracks without their credit fields, and the
+                # cache key is the album fingerprint, which a metadata-only
+                # change does not move. Dropping the cache is free — it is
+                # rebuilt from Navidrome on the next scan — and is the only way
+                # those rows ever gain the fields the singles rule reads.
+                self._conn.execute("DELETE FROM local_tracks")
 
             if current < 3:
                 # v2 had `ignored_release`, which could only express "owned".

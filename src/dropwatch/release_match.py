@@ -14,12 +14,20 @@ track is already on an owned album is not reported, while a single carrying an
 exclusive B-side or a different mix is. Where the evidence cannot settle the
 question the release is marked ambiguous and shown in a review section rather
 than being asserted as missing.
+
+For singles the duration half of that test is dropped when the same song, with
+the same version markers, sits on an owned album or EP credited to the artist.
+A single and its parent album routinely differ by a few seconds of lead-in or
+fade, and a genuinely different edit almost always says so in a version marker
+("Radio Edit", "Single Version") that identity already keeps apart — so the
+length difference on its own was reporting songs the user demonstrably owns.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from .classify import local_release_type
 from .models import (
     DECISION_BLOCKED,
     DECISION_MISSING,
@@ -31,7 +39,15 @@ from .models import (
     Ownership,
     ReleaseType,
 )
-from .normalize import ParsedTitle, durations_match, parse_title, title_similarity, track_key
+from .normalize import (
+    ParsedTitle,
+    artist_key_variants,
+    credited_to,
+    durations_match,
+    parse_title,
+    title_similarity,
+    track_key,
+)
 
 #: Track coverage above this counts as "essentially all of it".
 HIGH_COVERAGE = 0.85
@@ -75,21 +91,45 @@ class LocalIndex:
         self.artist = artist
         self.albums: list[LocalAlbum] = list(artist.albums)
         self.parsed: dict[str, ParsedTitle] = {}
+        self._variants = artist_key_variants(artist.name)
         self._by_base: dict[str, list[LocalAlbum]] = {}
         self._tracks_exact: dict[tuple[str, frozenset[str]], list[LocalTrack]] = {}
         self._tracks_by_base: dict[str, list[LocalTrack]] = {}
+        self._on_a_product: set[tuple[str, frozenset[str]]] = set()
 
         for album in self.albums:
             parsed = parse_title(album.name)
             self.parsed[album.id] = parsed
             if parsed.base:
                 self._by_base.setdefault(parsed.base, []).append(album)
+            # Falls back to the loaded tracks because `songCount` is a listing
+            # field, and an album that arrived without one still has a shape.
+            product = local_release_type(
+                album.song_count or len(album.tracks), album.duration
+            ) in (ReleaseType.ALBUM, ReleaseType.EP)
             for track in album.tracks:
                 base, versions = track_key(track.title)
                 if not base:
                     continue
                 self._tracks_exact.setdefault((base, versions), []).append(track)
                 self._tracks_by_base.setdefault(base, []).append(track)
+                if product and self._credits_artist(track, album):
+                    self._on_a_product.add((base, versions))
+
+    def _credits_artist(self, track: LocalTrack, album: LocalAlbum) -> bool:
+        """Is this recording credited to the artist being scanned?
+
+        Asked because an album reaching this index is not proof that its every
+        track is by this artist: a compilation credits dozens of acts, and
+        suppressing a single because someone *else*'s song shares its title
+        would be exactly the false claim the review section exists to avoid.
+        """
+        if not self._variants:
+            return False
+        return any(
+            credited_to(name, self._variants)
+            for name in (*track.credits, *album.credits)
+        )
 
     @property
     def has_tracks(self) -> bool:
@@ -104,6 +144,10 @@ class LocalIndex:
         """Return (exact version matches, same-song-different-version matches)."""
         return self._tracks_exact.get((base, versions), []), self._tracks_by_base.get(base, [])
 
+    def on_owned_product(self, base: str, versions: frozenset[str]) -> bool:
+        """Is this exact recording a track on an owned album or EP by the artist?"""
+        return (base, versions) in self._on_a_product
+
     def best_title_similarity(self, base: str) -> tuple[float, LocalAlbum | None]:
         best_score, best_album = 0.0, None
         for album in self.albums:
@@ -113,8 +157,17 @@ class LocalIndex:
         return best_score, best_album
 
 
-def compute_coverage(release: DeezerRelease, index: LocalIndex) -> Coverage:
-    """How much of the release's material already exists locally."""
+def compute_coverage(
+    release: DeezerRelease, index: LocalIndex, relax_duration: bool = False
+) -> Coverage:
+    """How much of the release's material already exists locally.
+
+    With `relax_duration`, a recording whose title and version markers match a
+    track on an owned album or EP counts as owned however long it runs. Only
+    singles ask for this: a single and its parent album routinely differ by a
+    few seconds of lead-in or fade, and treating that as a different edit put
+    songs the user demonstrably owns back in the queue.
+    """
     coverage = Coverage()
     for track in release.tracks:
         coverage.total += 1
@@ -128,6 +181,10 @@ def compute_coverage(release: DeezerRelease, index: LocalIndex) -> Coverage:
             # The song exists locally but only in a different version.
             coverage.different += 1 if same_song else 0
             coverage.absent += 0 if same_song else 1
+            continue
+
+        if relax_duration and index.on_owned_product(base, versions):
+            coverage.same += 1
             continue
 
         verdicts = [durations_match(track.duration, t.duration) for t in exact]
@@ -163,6 +220,19 @@ def determine_ownership(
     parsed = parse_title(release.title)
     if not parsed.base:
         return Verdict(Ownership.AMBIGUOUS, "release has no usable title")
+
+    # A single named after a song the library already holds on an album or EP,
+    # credited to this artist, is the advance-single case stated as a title
+    # rather than inferred from a tracklist. It settles the release outright
+    # only when there is no tracklist to check; otherwise coverage still runs,
+    # so a single carrying an exclusive B-side is reported as before.
+    if release_type is ReleaseType.SINGLE and index.on_owned_product(
+        parsed.base, parsed.versions
+    ):
+        if not release.tracks:
+            return Verdict(
+                Ownership.OWNED, "this song is already on an owned album or EP"
+            )
 
     title_matches = index.albums_with_base(parsed.base)
     same_version = [
@@ -269,7 +339,9 @@ def _judge_coverage(
             prefix + "no local album with this title (local track list unavailable)",
         )
 
-    coverage = compute_coverage(release, index)
+    coverage = compute_coverage(
+        release, index, relax_duration=release_type is ReleaseType.SINGLE
+    )
 
     if coverage.total == 0:
         return Verdict(Ownership.AMBIGUOUS, prefix + "release lists no tracks")

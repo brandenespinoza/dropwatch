@@ -279,6 +279,14 @@ habits are worth recognising in the output:
   Cosmetic edition markers ("Deluxe Edition", "2011 Remaster", "Explicit") are
   ignored when deciding identity, while version markers ("Live", "Acoustic",
   "Remix", "Demo") are preserved, because they denote a different recording.
+- **A single of a song you already have on an album or EP is not reported**, even
+  when the two run to different lengths — the single edit and the album cut are
+  the same song, and you own it. What counts is the credit, not the shelf it
+  sits on: a guest appearance on someone else's record settles the single just
+  as well as a track on the artist's own album. A single is still reported when
+  it carries something you do not have — a B-side, an acoustic take, a remix —
+  and when the song exists locally only on another single, where nothing but the
+  duration is available to judge it.
 - **When it cannot tell, it asks rather than guesses.** A release it cannot
   settle goes to the review section, not the main list. The bias is deliberate:
   quietly filtering out something you own is a smaller problem than telling you

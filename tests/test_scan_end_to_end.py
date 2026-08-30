@@ -169,6 +169,107 @@ def scanner(config, store):
     return scanner
 
 
+class TestCollaborationAlbums:
+    """An album belongs to every library artist credited on it."""
+
+    def _library(self, artists, albums):
+        http = FakeHttp()
+        http.add("ping.view", subsonic({"type": "navidrome"}))
+        http.add(
+            "getArtists.view",
+            subsonic(
+                {
+                    "artists": {
+                        "index": [
+                            {
+                                "artist": [
+                                    {"id": i, "name": n, "albumCount": 1}
+                                    for i, n in artists
+                                ]
+                            }
+                        ]
+                    }
+                }
+            ),
+        )
+        http.add(
+            "getAlbumList2.view",
+            lambda url: subsonic(
+                {"albumList2": {"album": [] if "offset=500" in url else albums}}
+            ),
+        )
+        return http
+
+    def _scanner(self, config, store, http):
+        return Scanner(NavidromeClient(config, http), None, store, config)
+
+    def test_a_duo_album_reaches_both_artists(self, config, store):
+        http = self._library(
+            [("1", "Keith Urban"), ("2", "Michael McDonald")],
+            [
+                {
+                    "id": "a1",
+                    "name": "The Speed of Now",
+                    "artist": "Keith Urban \u2022 Michael McDonald",
+                    "artists": [
+                        {"id": "1", "name": "Keith Urban"},
+                        {"id": "2", "name": "Michael McDonald"},
+                    ],
+                    "songCount": 8,
+                }
+            ],
+        )
+        artists = self._scanner(config, store, http).read_library(ScanOptions())
+        assert [[al.name for al in a.albums] for a in artists] == [
+            ["The Speed of Now"],
+            ["The Speed of Now"],
+        ]
+
+    def test_a_credited_album_is_no_longer_an_orphan(self, config, store):
+        # The display string matches no album-artist entry at all, which used
+        # to drop the album from the library entirely.
+        http = self._library(
+            [("1", "Keith Urban")],
+            [
+                {
+                    "id": "a1",
+                    "name": "Collab",
+                    "artist": "Somebody \u2022 Keith Urban",
+                    "artists": [{"id": "1", "name": "Keith Urban"}],
+                    "songCount": 8,
+                }
+            ],
+        )
+        artists = self._scanner(config, store, http).read_library(ScanOptions())
+        assert [al.name for al in artists[0].albums] == ["Collab"]
+
+    def test_an_uncredited_album_still_reaches_its_album_artist(self, config, store):
+        # A server without the OpenSubsonic arrays must behave as before.
+        http = self._library(
+            [("1", "Radiohead")],
+            [{"id": "a1", "name": "Kid A", "artist": "Radiohead", "songCount": 10}],
+        )
+        artists = self._scanner(config, store, http).read_library(ScanOptions())
+        assert [al.name for al in artists[0].albums] == ["Kid A"]
+
+    def test_an_album_is_not_attached_twice(self, config, store):
+        http = self._library(
+            [("1", "Radiohead")],
+            [
+                {
+                    "id": "a1",
+                    "name": "Kid A",
+                    "artist": "Radiohead",
+                    "artistId": "1",
+                    "artists": [{"id": "1", "name": "Radiohead"}],
+                    "songCount": 10,
+                }
+            ],
+        )
+        artists = self._scanner(config, store, http).read_library(ScanOptions())
+        assert len(artists[0].albums) == 1
+
+
 class TestFullScan:
     def test_owned_album_is_not_reported_and_new_one_is(self, scanner):
         deezer_routes(

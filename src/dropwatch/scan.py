@@ -207,14 +207,32 @@ class Scanner:
         by_name: dict[str, LocalArtist] = {fold(a.name): a for a in artists}
 
         orphans = 0
+        shared = 0
         for album in albums:
-            artist = by_id.get(album.artist_id) or by_name.get(fold(album.artist))
-            if artist is None:
+            # An album belongs to every artist credited on it. Attaching it to
+            # the one the display string leads with left a collaboration —
+            # "Keith Urban • Michael McDonald" — owned by neither, so its songs
+            # could not vouch for either artist's singles, and often matched no
+            # album-artist entry at all and was dropped as an orphan.
+            owners: dict[int, LocalArtist] = {}
+            primary = by_id.get(album.artist_id) or by_name.get(fold(album.artist))
+            if primary is not None:
+                owners[id(primary)] = primary
+            for name in album.artists:
+                credited = by_name.get(fold(name))
+                if credited is not None:
+                    owners[id(credited)] = credited
+            if not owners:
                 orphans += 1
                 continue
-            artist.albums.append(album)
+            if len(owners) > 1:
+                shared += 1
+            for artist in owners.values():
+                artist.albums.append(album)
         if orphans:
             log.info("%d album(s) had no matching album artist entry", orphans)
+        if shared:
+            log.info("%d album(s) are credited to more than one library artist", shared)
 
         if options.favorites:
             artists = self._only_favorites(artists)

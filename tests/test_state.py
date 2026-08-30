@@ -346,6 +346,29 @@ class TestSchemaMigration:
         with Store(path) as store:
             assert store.get_mapping("Björk").deezer_ids == ["630"]
 
+    def test_the_v3_track_cache_is_dropped(self, tmp_path):
+        # Those rows predate the credit fields and their fingerprint key does
+        # not move when only metadata changes, so they can never gain them.
+        import sqlite3
+
+        path = tmp_path / "old.sqlite3"
+        self._v1_database(path)
+        conn = sqlite3.connect(path)
+        conn.execute("INSERT INTO local_tracks VALUES('a1','8:2100','[]',0)")
+        conn.execute("INSERT INTO meta VALUES('schema_version','3')")
+        conn.commit()
+        conn.close()
+
+        with Store(path) as store:
+            assert store.get_local_tracks("a1", "8:2100") is None
+
+    def test_a_current_track_cache_survives(self, tmp_path):
+        path = tmp_path / "state.sqlite3"
+        with Store(path) as store:
+            store.set_local_tracks("a1", "8:2100", [{"title": "X"}])
+        with Store(path) as store:
+            assert store.get_local_tracks("a1", "8:2100") == [{"title": "X"}]
+
     def test_version_is_recorded(self, tmp_path):
 
         path = tmp_path / "old.sqlite3"

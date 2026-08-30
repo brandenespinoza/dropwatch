@@ -272,6 +272,23 @@ class NavidromeClient:
         return failures
 
 
+def _credit_names(*arrays: object) -> tuple[str, ...]:
+    """Names from OpenSubsonic `artists`/`albumArtists` arrays, deduplicated.
+
+    Servers predating the extension send neither, so an empty result means
+    "not told", never "nobody" — callers keep the flat display string too.
+    """
+    names: list[str] = []
+    for array in arrays:
+        for entry in array or ():
+            if not isinstance(entry, dict):
+                continue
+            name = (entry.get("name") or "").strip()
+            if name and name not in names:
+                names.append(name)
+    return tuple(names)
+
+
 def _album_from_json(data: dict) -> LocalAlbum:
     return LocalAlbum(
         id=str(data.get("id", "")),
@@ -281,6 +298,7 @@ def _album_from_json(data: dict) -> LocalAlbum:
         year=int(data["year"]) if str(data.get("year") or "").isdigit() else None,
         song_count=int(data.get("songCount") or 0),
         duration=int(data.get("duration") or 0) or None,
+        artists=_credit_names(data.get("artists"), data.get("albumArtists")),
     )
 
 
@@ -292,6 +310,8 @@ def _track_from_json(data: dict) -> LocalTrack:
         disc=int(data["discNumber"]) if str(data.get("discNumber") or "").isdigit() else None,
         artist=data.get("artist") or "",
         year=int(data["year"]) if str(data.get("year") or "").isdigit() else None,
+        artists=_credit_names(data.get("artists"), data.get("albumArtists")),
+        album_artist=data.get("albumArtist") or "",
     )
 
 

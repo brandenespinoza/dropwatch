@@ -133,16 +133,50 @@ class TestSingles:
         verdict = determine_ownership(single, index, ReleaseType.SINGLE)
         assert verdict.reportable
 
-    def test_same_title_and_version_but_different_length_is_reported(self):
-        # A materially different edit of a track that is otherwise owned.
+    def test_length_does_not_matter_when_the_song_is_on_an_owned_album(self):
+        # The single and the album cut differ by over two minutes. They are
+        # still the same song, and the library plainly has it.
         index = index_with(local_album("Kid A", "Radiohead", 2000, ALBUM_TRACKS))
         single = deezer_release(
             "Idioteque", release_id="s5", date="2000-11-01", record_type="single",
             tracks=[("Idioteque", 420)],
         )
         verdict = determine_ownership(single, index, ReleaseType.SINGLE)
+        assert verdict.ownership is Ownership.OWNED
+        assert not verdict.reportable
+
+    def test_length_still_decides_when_the_song_is_only_on_a_local_single(self):
+        # Nothing vouches for the recording but another single, so the
+        # duration evidence keeps its teeth.
+        index = index_with(
+            local_album("Early Singles", "Radiohead", 2001, [("Pyramid Song", 289)])
+        )
+        single = deezer_release(
+            "Pyramid Song", release_id="s5b", date="2001-05-21", record_type="single",
+            tracks=[("Pyramid Song", 420)],
+        )
+        verdict = determine_ownership(single, index, ReleaseType.SINGLE)
         assert verdict.ownership is Ownership.PROBABLY_MISSING
         assert "differ" in verdict.reason
+
+    def test_album_edition_still_reports_a_materially_different_edit(self):
+        # The relaxation is scoped to singles; an album keeps the strict test.
+        index = index_with(local_album("Kid A", "Radiohead", 2000, ALBUM_TRACKS))
+        release = deezer_release(
+            "Amnesiac", release_id="s5c", date="2001-06-05",
+            tracks=[("Idioteque", 420), ("Pyramid Song", 300)],
+        )
+        verdict = determine_ownership(release, index, ReleaseType.ALBUM)
+        assert verdict.reportable
+
+    def test_single_of_an_owned_song_is_owned_without_track_detail(self):
+        # Named after a song on an owned album, so the tracklist adds nothing.
+        index = index_with(local_album("Kid A", "Radiohead", 2000, ALBUM_TRACKS))
+        single = deezer_release(
+            "Optimistic", release_id="s5d", date="2000-08-01", record_type="single"
+        )
+        verdict = determine_ownership(single, index, ReleaseType.SINGLE)
+        assert verdict.ownership is Ownership.OWNED
 
     def test_single_without_track_detail_goes_to_review(self):
         # Recording identity cannot be established, so it must not be asserted.
@@ -162,6 +196,115 @@ class TestSingles:
             versions=["Remix", "Remix"],
         )
         assert determine_ownership(remixes, index, ReleaseType.SINGLE).reportable
+
+
+class TestSingleAgainstOwnedSongs:
+    """A single is settled by the song it is named after, however credited."""
+
+    def test_guest_appearance_on_another_artists_album_counts(self):
+        # "Feel It Still" sits on a Portugal. The Man album; our artist is a
+        # credited guest on that track only.
+        collab = local_album(
+            "Woodstock",
+            "Portugal. The Man",
+            2017,
+            [
+                ("Feel It Still", 163, ["Portugal. The Man", "Test Artist"]),
+                ("Rich Friends", 200),
+                ("Live in the Moment", 220),
+                ("Number One", 240),
+            ],
+        )
+        index = LocalIndex(local_artist("Test Artist", [collab]))
+        single = deezer_release(
+            "Feel It Still", release_id="g1", record_type="single",
+            tracks=[("Feel It Still", 195)],
+        )
+        assert determine_ownership(single, index, ReleaseType.SINGLE).ownership is Ownership.OWNED
+
+    def test_a_featured_credit_in_the_display_string_counts(self):
+        collab = local_album(
+            "Collaboration",
+            "Someone Else",
+            2019,
+            [
+                ("Shared Song", 200, "Someone Else feat. Test Artist"),
+                ("Their Song", 200),
+                ("Another", 210),
+                ("And Another", 205),
+            ],
+        )
+        index = LocalIndex(local_artist("Test Artist", [collab]))
+        single = deezer_release(
+            "Shared Song", release_id="g2", record_type="single",
+            tracks=[("Shared Song", 260)],
+        )
+        assert determine_ownership(single, index, ReleaseType.SINGLE).ownership is Ownership.OWNED
+
+    def test_someone_elses_song_on_a_compilation_does_not_suppress(self):
+        # The compilation is in this artist's shelf, but this song is not
+        # theirs, so it cannot vouch for their single of the same name.
+        compilation = local_album(
+            "Indie Essentials",
+            "Various Artists",
+            2015,
+            [
+                ("Shared Title", 200, "A Different Band"),
+                ("Other Song", 200, "Yet Another Band"),
+                ("Third", 210, "Third Band"),
+                ("Fourth", 205, "Fourth Band"),
+            ],
+        )
+        index = LocalIndex(local_artist("Test Artist", [compilation]))
+        single = deezer_release(
+            "Shared Title", release_id="g3", record_type="single",
+            tracks=[("Shared Title", 300)],
+        )
+        assert determine_ownership(single, index, ReleaseType.SINGLE).reportable
+
+    def test_a_song_only_on_a_local_single_is_not_a_product(self):
+        # Two tracks is a single, not an album or an EP, so it does not vouch.
+        index = LocalIndex(
+            local_artist(
+                "Test Artist",
+                [local_album("Early Single", "Test Artist", 2018,
+                             [("Old Song", 200), ("B Side", 180)])],
+            )
+        )
+        single = deezer_release(
+            "Old Song", release_id="g4", record_type="single",
+            tracks=[("Old Song", 300)],
+        )
+        assert determine_ownership(single, index, ReleaseType.SINGLE).reportable
+
+    def test_an_ep_vouches_as_readily_as_an_album(self):
+        ep = local_album(
+            "The EP", "Test Artist", 2021,
+            [("One", 200), ("Two", 200), ("Three", 200), ("Four", 200)],
+        )
+        index = LocalIndex(local_artist("Test Artist", [ep]))
+        single = deezer_release(
+            "Three", release_id="g5", record_type="single", tracks=[("Three", 275)],
+        )
+        assert determine_ownership(single, index, ReleaseType.SINGLE).ownership is Ownership.OWNED
+
+    def test_an_acoustic_single_of_an_owned_song_is_still_reported(self):
+        # Version markers are identity, so the rule never reaches this one.
+        index = index_with(local_album("Kid A", "Radiohead", 2000, ALBUM_TRACKS))
+        single = deezer_release(
+            "Idioteque (Acoustic)", release_id="g6", record_type="single",
+            tracks=[("Idioteque", 289)], versions=["Acoustic"],
+        )
+        assert determine_ownership(single, index, ReleaseType.SINGLE).reportable
+
+    def test_a_single_with_an_unowned_extra_track_is_still_reported(self):
+        # The titled song is owned; the B-side is the reason to keep it.
+        index = index_with(local_album("Kid A", "Radiohead", 2000, ALBUM_TRACKS))
+        single = deezer_release(
+            "Idioteque", release_id="g7", record_type="single",
+            tracks=[("Idioteque", 420), ("Cuttooth", 320)],
+        )
+        assert determine_ownership(single, index, ReleaseType.SINGLE).reportable
 
 
 class TestCoverage:

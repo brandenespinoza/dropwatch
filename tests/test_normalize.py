@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from dropwatch.normalize import (
+    credited_to,
     artist_key_variants,
     durations_match,
     fold,
@@ -161,6 +162,28 @@ class TestTrackKey:
 
     def test_remaster_suffix_is_cosmetic_for_tracks(self):
         assert track_key("Song (2011 Remaster)") == track_key("Song")
+
+
+class TestCreditedTo:
+    variants = {"ghost", "test artist"}
+
+    def test_exact_credit(self):
+        assert credited_to("Ghost", self.variants)
+
+    def test_credit_inside_a_featured_string(self):
+        assert credited_to("Ghost feat. Tobias Forge", self.variants)
+        assert credited_to("Someone Else feat. Test Artist", self.variants)
+
+    def test_a_longer_name_is_not_a_match(self):
+        # The whole point of matching tokens rather than substrings.
+        assert not credited_to("Ghostface Killah", self.variants)
+
+    def test_punctuation_and_case_are_folded(self):
+        assert credited_to("GHOST / Tobias", self.variants)
+
+    def test_empty_inputs(self):
+        assert not credited_to("", self.variants)
+        assert not credited_to("Ghost", set())
 
 
 class TestSimilarity:

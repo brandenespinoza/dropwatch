@@ -116,13 +116,27 @@ def local_album(
     name: str,
     artist: str = "Test Artist",
     year: int | None = 2020,
-    tracks: list[tuple[str, int]] | None = None,
+    tracks: list[tuple] | None = None,
     album_id: str = "",
+    artists: list[str] | None = None,
 ) -> LocalAlbum:
-    track_list = [
-        LocalTrack(title=title, duration=duration, track=i + 1, artist=artist)
-        for i, (title, duration) in enumerate(tracks or [])
-    ]
+    """A local album. Track tuples are (title, duration) or (title, duration,
+    credits) — where credits is the song's own artist string, or a list of
+    structured per-track credit names for a guest appearance."""
+    track_list = []
+    for i, entry in enumerate(tracks or []):
+        title, duration, credits = (*entry, None)[:3]
+        names = [credits] if isinstance(credits, str) else list(credits or [])
+        track_list.append(
+            LocalTrack(
+                title=title,
+                duration=duration,
+                track=i + 1,
+                artist=names[0] if names else artist,
+                artists=tuple(names[1:]),
+                album_artist=artist,
+            )
+        )
     album = LocalAlbum(
         id=album_id or f"al-{abs(hash((name, artist))) % 100000}",
         name=name,
@@ -132,6 +146,7 @@ def local_album(
         duration=sum(t.duration or 0 for t in track_list) or None,
         tracks=track_list,
         tracks_loaded=True,
+        artists=tuple(artists or ()),
     )
     return album
 

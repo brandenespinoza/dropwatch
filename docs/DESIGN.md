@@ -106,6 +106,14 @@ credentials — has its own error type and an actionable hint. **(Invariant.)**
 Album listing is bulk-paginated rather than per-artist: hundreds of artists cost
 a handful of requests instead of hundreds.
 
+Credits are read from the structured `artists` and `albumArtists` arrays where
+the server sends them, never by splitting a display string. "Keith Urban •
+Michael McDonald" is nobody's artist, and splitting on `&`, `feat.` or a comma
+invents artists that do not exist — "Earth, Wind & Fire" being three of them. An
+album is therefore attached to *every* library artist credited on it rather than
+to whichever one the display string leads with; a server predating the extension
+sends no arrays, and the flat strings still work as before. **(Invariant.)**
+
 ### Deezer
 
 Catalogue access is entirely anonymous — search, discographies, album metadata
@@ -173,10 +181,35 @@ Meaningful distinctions are never normalised away when comparing titles. An
 unrecognised suffix keeps titles apart rather than silently merging them.
 **(Invariant.)**
 
-A single whose only recording is already on an owned album is not reported; one
-carrying an exclusive B-side, remix, acoustic take, live version or materially
-different edit is. Where recording identity cannot be established, it goes to
-review rather than being asserted as missing. **(Invariant.)**
+A single whose only recording is already on an owned album or EP is not
+reported; one carrying an exclusive B-side, remix, acoustic take or live version
+is. Where recording identity cannot be established, it goes to review rather
+than being asserted as missing. **(Invariant.)**
+
+**For a single, a length difference alone is not evidence of a different
+recording.** When the same song — same base title, same version markers — sits
+on an owned album or EP credited to the artist, the single is owned however long
+its version runs. A genuinely different edit nearly always says so in a version
+marker ("Radio Edit", "Single Version", "Extended Mix") that identity already
+keeps apart, so the residual length differences are lead-ins, fades and
+mastering, and treating those as a different edit put songs the user
+demonstrably owns back in the queue. The relaxation is scoped to singles: for an
+album edition the duration test still stands, because there the length of a
+track is the only thing separating a genuine alternate cut from a reissue.
+
+The album-or-EP requirement is what keeps that honest — a one- or two-track
+local release is itself a single, and letting singles vouch for singles would
+launder a guess into a claim. Local shape is judged with the same structural
+thresholds Deezer's `record_type` is cross-checked against, since Navidrome does
+not record whether an album is an album, an EP or a single.
+
+**A song vouches only if it is credited to the artist being scanned.** The song's
+`artist`, its structured `artists`, and its `albumArtist` all count, so a guest
+appearance on someone else's record is as good as a track on the artist's own.
+Album membership alone is not enough: a compilation sitting in an artist's shelf
+is full of other people's songs, and letting one of those suppress a same-titled
+single would be exactly the false claim the review section exists to prevent.
+**(Invariant.)**
 
 Only a recording the library actually holds may vouch for another release. An
 album settled as owned on its title alone may be part-owned, and its published
@@ -408,7 +441,9 @@ Not limitations to fix — facts that explain why matching works as it does.
 
 - Local files carry no ISRCs; the Subsonic API does not expose them. Recording
   identity against the library therefore rests on title, version and duration,
-  and ISRCs are used only Deezer-side, where both sides have them.
+  and ISRCs are used only Deezer-side, where both sides have them. Duration is
+  the weakest of the three and the only one a single drops, for the reason in
+  *Ownership* above.
 - Deezer's `record_type` is inconsistent — the catalogue contains three-track
   "albums" and eight-track "singles" — which is why structural evidence
   cross-checks it and why `Unknown` exists rather than a guess.

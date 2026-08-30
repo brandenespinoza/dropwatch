@@ -60,6 +60,17 @@ def _structural_type(nb_tracks: int | None, duration: int | None) -> ReleaseType
     return None
 
 
+def local_release_type(song_count: int, duration: int | None) -> ReleaseType | None:
+    """Type of a *local* album, from its shape alone.
+
+    Navidrome does not record whether an album is an album, an EP or a single,
+    so the same structural thresholds Deezer's inconsistent `record_type` is
+    cross-checked against are the only ruler available. None when the shape
+    says nothing — an album whose song count was never read.
+    """
+    return _structural_type(song_count or None, duration)
+
+
 def classify_release(release: DeezerRelease) -> Classification:
     """Decide the primary type and collect secondary characteristics."""
     parsed = parse_title(release.title)

@@ -34,7 +34,7 @@ in [docs/DESIGN.md](docs/DESIGN.md); breaking one builds a different tool.
 ## Commands
 
 ```bash
-python3 -m pytest                                   # 707 tests
+python3 -m pytest                                   # 731 tests
 python3 -m pytest tests/test_rip.py -q              # one file
 python3 -m pytest tests/test_rip.py::TestBuildCommand::test_quoted_arguments_survive
 python3 -m pytest -k scope                          # by name
@@ -88,6 +88,18 @@ whole discography on album titles alone — cheap, and it settles anything clear
 owned. Only survivors are worth fetching local tracks and Deezer album detail for;
 those are re-judged at recording level, then owned albums vouch for advance singles
 via ISRC. Pass one's verdicts are reused, never recomputed.
+
+**Singles are judged on title and credit, not duration** (`release_match.py`).
+`LocalIndex._on_a_product` holds every recording that sits on an owned album or
+EP *and* is credited to the artist being scanned — credit meaning the song's
+`artist`, its structured `artists` or its `albumArtist`, so a guest appearance
+counts. A single matching one of those is owned however long it runs. Three
+things keep this from over-claiming, and none is incidental: the match is on base
+title *plus* version markers, so an acoustic take is still a different song; the
+local release must be an album or EP, so a single cannot vouch for a single; and
+the credit check is what stops a compilation's other artists from suppressing a
+same-titled single. Album editions keep the strict duration test — the relaxation
+is passed in per call as `compute_coverage(relax_duration=...)`.
 
 **The report queues are merged on write and filtered on read.** The subtlest thing
 here, and it spans three files:

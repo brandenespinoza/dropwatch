@@ -274,6 +274,28 @@ def artist_key_variants(name: str) -> set[str]:
     return {v for v in variants if v}
 
 
+def credited_to(credit: str, variants: set[str]) -> bool:
+    """Does this credit string name an artist with one of these keys?
+
+    Matched on whole tokens rather than substrings, because a display credit is
+    free text: "Ghost" must not be found inside "Ghostface Killah", while
+    "Ghost" does have to be found inside "Ghost feat. Tobias Forge". Structured
+    credit arrays are already split into real names and compare exactly; this
+    exists for the flat display strings, which are not.
+    """
+    words = fold(credit).split()
+    if not words:
+        return False
+    for variant in variants:
+        wanted = variant.split()
+        if not wanted:
+            continue
+        span = len(wanted)
+        if any(words[i : i + span] == wanted for i in range(len(words) - span + 1)):
+            return True
+    return False
+
+
 # --- Similarity ------------------------------------------------------------
 
 

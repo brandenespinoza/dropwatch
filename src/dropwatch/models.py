@@ -152,6 +152,22 @@ class LocalTrack:
     disc: int | None = None
     artist: str = ""
     year: int | None = None
+    #: Structured per-track credits (OpenSubsonic `artists`), already split
+    #: into real names. The flat `artist` above is a display string that joins
+    #: collaborators — "A feat. B", "A • B" — and is nobody's artist on its own.
+    artists: tuple[str, ...] = ()
+    #: The album artist as tagged on the song, which differs from `artist` on
+    #: compilations and on any album carrying a guest.
+    album_artist: str = ""
+
+    def __post_init__(self) -> None:
+        # Round-trips through the JSON track cache as a list.
+        self.artists = tuple(self.artists or ())
+
+    @property
+    def credits(self) -> tuple[str, ...]:
+        """Every name this recording is credited to, in no particular order."""
+        return tuple(n for n in (self.artist, self.album_artist, *self.artists) if n)
 
 
 @dataclass
@@ -165,11 +181,22 @@ class LocalAlbum:
     duration: int | None = None
     tracks: list[LocalTrack] = field(default_factory=list)
     tracks_loaded: bool = False
+    #: Structured album-level credits, for the same reason as on LocalTrack.
+    #: A collaboration album belongs to every artist named here, not just to
+    #: whichever one `artist` happens to lead with.
+    artists: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        self.artists = tuple(self.artists or ())
 
     @property
     def fingerprint(self) -> str:
         """Changes when the album's content changes, for cache invalidation."""
         return f"{self.song_count}:{self.duration or 0}"
+
+    @property
+    def credits(self) -> tuple[str, ...]:
+        return tuple(n for n in (self.artist, *self.artists) if n)
 
 
 @dataclass

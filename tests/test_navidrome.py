@@ -227,6 +227,80 @@ class TestLibraryReads:
         assert tracks[0].disc == 1
 
 
+class TestCredits:
+    """OpenSubsonic credit arrays, which the singles rule reads."""
+
+    def test_album_credits_include_every_named_artist(self, client, fake_http):
+        fake_http.add(
+            "getAlbumList2.view",
+            subsonic(
+                {
+                    "albumList2": {
+                        "album": [
+                            {
+                                "id": "a1",
+                                "name": "The Speed of Now",
+                                "artist": "Keith Urban \u2022 Michael McDonald",
+                                "artists": [
+                                    {"id": "1", "name": "Keith Urban"},
+                                    {"id": "2", "name": "Michael McDonald"},
+                                ],
+                            }
+                        ]
+                    }
+                }
+            ),
+        )
+        album = client.get_all_albums()[0]
+        assert album.artists == ("Keith Urban", "Michael McDonald")
+
+    def test_track_credits_cover_artist_artists_and_album_artist(self, client, fake_http):
+        fake_http.add(
+            "getAlbum.view",
+            subsonic(
+                {
+                    "album": {
+                        "id": "a1",
+                        "song": [
+                            {
+                                "id": "s1",
+                                "title": "Feel It Still",
+                                "duration": 163,
+                                "artist": "Portugal. The Man feat. Guest",
+                                "albumArtist": "Portugal. The Man",
+                                "artists": [
+                                    {"id": "9", "name": "Portugal. The Man"},
+                                    {"id": "10", "name": "Guest"},
+                                ],
+                            }
+                        ],
+                    }
+                }
+            ),
+        )
+        track = client.get_album_tracks("a1")[0]
+        assert track.album_artist == "Portugal. The Man"
+        assert track.artists == ("Portugal. The Man", "Guest")
+        assert "Guest" in track.credits
+
+    def test_a_server_without_the_extension_still_parses(self, client, fake_http):
+        # Plain Subsonic sends no arrays; the flat strings must still work.
+        fake_http.add(
+            "getAlbum.view",
+            subsonic(
+                {
+                    "album": {
+                        "id": "a1",
+                        "song": [{"id": "s1", "title": "X", "artist": "Radiohead"}],
+                    }
+                }
+            ),
+        )
+        track = client.get_album_tracks("a1")[0]
+        assert track.artists == ()
+        assert track.credits == ("Radiohead",)
+
+
 class TestPartialFailures:
     def test_one_failing_album_does_not_abort_the_rest(self, client, fake_http):
         def respond(url):
