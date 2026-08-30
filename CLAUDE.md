@@ -34,7 +34,7 @@ in [docs/DESIGN.md](docs/DESIGN.md); breaking one builds a different tool.
 ## Commands
 
 ```bash
-python3 -m pytest                                   # 746 tests
+python3 -m pytest                                   # 750 tests
 python3 -m pytest tests/test_rip.py -q              # one file
 python3 -m pytest tests/test_rip.py::TestBuildCommand::test_quoted_arguments_survive
 python3 -m pytest -k scope                          # by name
@@ -121,6 +121,14 @@ replays that list; `--limit` is never replayed. Do not move a scope fact onto
 the stored entries — a stamp cannot be corrected by a run that no longer visits
 that artist, which is how ex-favourites once leaked into the walk. Read
 DESIGN.md's *Downloading* section before changing any of it.
+
+**An artist's shelf is assembled from two endpoints** (`scan.py::read_library`).
+`getAlbumList2` in bulk gives the album-artist backbone, and `_add_participations`
+then asks `getArtist` per *scanned* artist for the albums they appear on without
+heading. Both are needed and neither is redundant: the bulk listing names one
+album artist per album, and album-level `artists` does not name track-level
+guests. Participations reuse the bulk album objects so both shelves share one
+instance and its tracks are fetched and cached once.
 
 **Traits are the release's own description, and the report's NOTES column.**
 `classify.py::shared_track_versions` promotes a version marker into the traits

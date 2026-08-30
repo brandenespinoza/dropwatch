@@ -247,7 +247,42 @@ class Scanner:
         artists.sort(key=lambda a: fold(a.name))
         if options.limit:
             artists = artists[: options.limit]
+        # Last, so only the artists this run will actually visit pay for it.
+        self._add_participations(artists, {a.id: a for a in albums})
         return artists
+
+    def _add_participations(
+        self, artists: list[LocalArtist], known: dict[str, LocalAlbum]
+    ) -> None:
+        """Add the albums an artist appears on without heading.
+
+        `getAlbumList2` names one album artist per album, so a guest spot —
+        "Paper Thin Walls", filed under Stoney Banks, with Flip Flop Republic
+        credited only on the track — never reached the guest's shelf, and their
+        own single of that song came back as missing while the file sat on
+        disk. Album-level credits do not help: that album's `artists` array
+        names Stoney Banks alone. `getArtist` is the one endpoint that reports
+        participations, so it is asked once per scanned artist.
+
+        Albums already read in bulk are reused rather than re-wrapped, so the
+        two shelves share one object and its tracks are fetched and cached once.
+        """
+        wanted = [a.id for a in artists if a.id]
+        if not wanted:
+            return
+        by_artist = self.client.get_artist_albums_many(wanted)
+
+        added = 0
+        for artist in artists:
+            seen = {album.id for album in artist.albums}
+            for album in by_artist.get(artist.id, ()):
+                if album.id in seen:
+                    continue
+                artist.albums.append(known.get(album.id, album))
+                seen.add(album.id)
+                added += 1
+        if added:
+            log.info("%d participation(s) added beyond the album-artist listing", added)
 
     def _only_favorites(self, artists: list[LocalArtist]) -> list[LocalArtist]:
         """Keep the album artists among your Navidrome favourites.

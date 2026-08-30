@@ -213,6 +213,31 @@ class NavidromeClient:
         artist = body.get("artist") or {}
         return [_album_from_json(a) for a in (artist.get("album") or [])]
 
+    def get_artist_albums_many(
+        self, artist_ids: list[str], workers: int = TRACK_FETCH_WORKERS
+    ) -> dict[str, list[LocalAlbum]]:
+        """`getArtist` for several artists at once, skipping the ones that fail.
+
+        Asked per artist rather than for the library because this is the only
+        endpoint that reports *participations* — albums the artist appears on
+        without heading. One artist failing must not abort the run, so it is
+        logged and left out.
+        """
+        found: dict[str, list[LocalAlbum]] = {}
+
+        def fetch(artist_id: str) -> tuple[str, list[LocalAlbum] | None]:
+            try:
+                return artist_id, self.get_artist_albums(artist_id)
+            except Exception as exc:  # noqa: BLE001 - one artist must not stop the scan
+                log.warning("Could not read albums for artist %s: %s", artist_id, exc)
+                return artist_id, None
+
+        with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+            for artist_id, albums in pool.map(fetch, artist_ids):
+                if albums is not None:
+                    found[artist_id] = albums
+        return found
+
     def get_all_albums(self, page_size: int = 500) -> list[LocalAlbum]:
         """Every album in the library, paginated.
 

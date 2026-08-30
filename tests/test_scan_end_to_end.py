@@ -74,6 +74,26 @@ def navidrome_routes(http: FakeHttp) -> None:
         ),
     )
     http.add(
+        "getArtist.view",
+        subsonic(
+            {
+                "artist": {
+                    "id": "1",
+                    "name": "Radiohead",
+                    "album": [
+                        {
+                            "id": "a1",
+                            "name": "Kid A",
+                            "artist": "Radiohead",
+                            "artistId": "1",
+                            "songCount": len(KID_A),
+                        }
+                    ],
+                }
+            }
+        ),
+    )
+    http.add(
         "getAlbum.view",
         subsonic(
             {
@@ -175,7 +195,7 @@ def scanner(config, store):
 class TestCollaborationAlbums:
     """An album belongs to every library artist credited on it."""
 
-    def _library(self, artists, albums):
+    def _library(self, artists, albums, participations=()):
         http = FakeHttp()
         http.add("ping.view", subsonic({"type": "navidrome"}))
         http.add(
@@ -201,6 +221,7 @@ class TestCollaborationAlbums:
                 {"albumList2": {"album": [] if "offset=500" in url else albums}}
             ),
         )
+        http.add("getArtist.view", subsonic({"artist": {"album": participations}}))
         return http
 
     def _scanner(self, config, store, http):
@@ -252,6 +273,78 @@ class TestCollaborationAlbums:
             [("1", "Radiohead")],
             [{"id": "a1", "name": "Kid A", "artist": "Radiohead", "songCount": 10}],
         )
+        artists = self._scanner(config, store, http).read_library(ScanOptions())
+        assert [al.name for al in artists[0].albums] == ["Kid A"]
+
+    def test_a_guest_spot_reaches_the_guest(self, config, store):
+        # "Paper Thin Walls" is filed under Stoney Banks and its album-level
+        # credits name only him; Flip Flop Republic is on the track. Navidrome
+        # reports it as a participation, which is the only way it gets here.
+        http = self._library(
+            [("1", "Flip Flop Republic")],
+            [
+                {
+                    "id": "a9",
+                    "name": "Paper Thin Walls",
+                    "artist": "Stoney Banks",
+                    "artistId": "2",
+                    "artists": [{"id": "2", "name": "Stoney Banks"}],
+                    "songCount": 1,
+                }
+            ],
+            participations=[
+                {
+                    "id": "a9",
+                    "name": "Paper Thin Walls",
+                    "artist": "Stoney Banks",
+                    "artistId": "2",
+                    "songCount": 1,
+                }
+            ],
+        )
+        artists = self._scanner(config, store, http).read_library(ScanOptions())
+        assert [al.name for al in artists[0].albums] == ["Paper Thin Walls"]
+
+    def test_a_participation_reuses_the_bulk_album_object(self, config, store):
+        # Both shelves must share one object, so its tracks are fetched once.
+        http = self._library(
+            [("1", "Stoney Banks"), ("2", "Flip Flop Republic")],
+            [
+                {
+                    "id": "a9",
+                    "name": "Paper Thin Walls",
+                    "artist": "Stoney Banks",
+                    "artistId": "1",
+                    "songCount": 1,
+                }
+            ],
+            participations=[
+                {"id": "a9", "name": "Paper Thin Walls", "artist": "Stoney Banks",
+                 "artistId": "1", "songCount": 1}
+            ],
+        )
+        artists = self._scanner(config, store, http).read_library(ScanOptions())
+        shelves = {a.name: a.albums for a in artists}
+        assert shelves["Stoney Banks"][0] is shelves["Flip Flop Republic"][0]
+
+    def test_a_server_without_participations_is_unaffected(self, config, store):
+        http = self._library(
+            [("1", "Radiohead")],
+            [{"id": "a1", "name": "Kid A", "artist": "Radiohead", "artistId": "1",
+              "songCount": 10}],
+            participations=[],
+        )
+        artists = self._scanner(config, store, http).read_library(ScanOptions())
+        assert [al.name for al in artists[0].albums] == ["Kid A"]
+
+    def test_a_failing_getartist_does_not_abort_the_read(self, config, store):
+        http = self._library(
+            [("1", "Radiohead")],
+            [{"id": "a1", "name": "Kid A", "artist": "Radiohead", "artistId": "1",
+              "songCount": 10}],
+        )
+        http.routes.pop("getArtist.view")
+        http.add("getArtist.view", ConnectionTimeoutError("nope"))
         artists = self._scanner(config, store, http).read_library(ScanOptions())
         assert [al.name for al in artists[0].albums] == ["Kid A"]
 

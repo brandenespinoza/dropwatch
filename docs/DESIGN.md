@@ -104,7 +104,17 @@ DNS, no route, refused, timeout, TLS, wrong path, not-Subsonic, rejected
 credentials — has its own error type and an actionable hint. **(Invariant.)**
 
 Album listing is bulk-paginated rather than per-artist: hundreds of artists cost
-a handful of requests instead of hundreds.
+a handful of requests instead of hundreds. That listing names **one** album
+artist per album, so it is supplemented by `getArtist` for each artist the run
+will actually visit — the only endpoint that reports *participations*, the
+albums an artist appears on without heading. Without it a guest spot never
+reached the guest: "Paper Thin Walls", filed under Stoney Banks with Flip Flop
+Republic credited only on the track, left Flip Flop Republic's own single of
+that song reported as missing while the file sat on disk. Album-level credits
+cannot rescue that case — the album's `artists` array names Stoney Banks alone.
+The cost is one LAN request per *scanned* artist, against a Deezer half that is
+rate-limited to roughly eight requests a second, and a server that reports no
+participations simply returns what the bulk listing already gave.
 
 Credits are read from the structured `artists` and `albumArtists` arrays where
 the server sends them, never by splitting a display string. "Keith Urban •

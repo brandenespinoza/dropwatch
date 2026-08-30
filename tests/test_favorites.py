@@ -49,6 +49,8 @@ def library(fake_http, *artists):
         ),
     )
     fake_http.add("getAlbumList2.view", subsonic({"albumList2": {"album": []}}))
+    # `read_library` asks this per scanned artist, for participations.
+    fake_http.add("getArtist.view", subsonic({"artist": {"album": []}}))
 
 
 class TestFavoritesFilter:
