@@ -31,12 +31,13 @@ from dropwatch.report import (
 _ids = iter(range(1, 10_000))
 
 
-def missing(title, date, artist="Artist", release_type=ReleaseType.ALBUM):
+def missing(title, date, artist="Artist", release_type=ReleaseType.ALBUM, traits=()):
     return MissingRelease(
         release=deezer_release(title, release_id=str(next(_ids)), date=date),
         local_artist=artist,
         release_type=release_type,
         ownership=Ownership.MISSING,
+        traits=tuple(traits),
     )
 
 
@@ -200,6 +201,59 @@ class TestTable:
 
     def test_empty_result_set_renders_nothing(self):
         assert render_table([]) == []
+
+
+class TestNotesColumn:
+    """What a release is, when its title does not say."""
+
+    def test_the_column_is_absent_when_nothing_is_flagged(self):
+        lines = render_table([missing("Plain", "2024-01-01")], width=140, grouped=False)
+        assert "NOTES" not in lines[0]
+        # The title column keeps the cells the notes column would have taken.
+        assert "Plain" in lines[1]
+
+    def test_a_flagged_release_gets_a_notes_column(self):
+        lines = render_table(
+            [missing("Castaway", "2025-12-12", traits=("remix",))], width=140,
+            grouped=False,
+        )
+        assert "NOTES" in lines[0]
+        assert "remix" in lines[1]
+
+    def test_one_flagged_release_gives_every_row_the_column(self):
+        lines = render_table(
+            [
+                missing("Castaway", "2025-12-12", traits=("remix",)),
+                missing("Plain", "2025-06-06"),
+            ],
+            width=140,
+            grouped=False,
+        )
+        assert lines[0].index("NOTES") == lines[1].index("remix")
+        # The unflagged row leaves the cell blank rather than shifting the URL.
+        assert lines[1].index("https://") == lines[2].index("https://")
+
+    def test_several_traits_are_listed(self):
+        line = render_table(
+            [missing("X", "2024-01-01", traits=("deluxe", "remaster"))],
+            width=140, grouped=False,
+        )[1]
+        assert "deluxe, remaster" in line
+
+    def test_a_long_note_is_truncated_not_wrapped(self):
+        lines = render_table(
+            [missing("X", "2024-01-01", traits=("anniversary", "compilation", "remaster"))],
+            width=140, grouped=False,
+        )
+        assert len(lines) == 2
+        assert "…" in lines[1]
+
+    def test_the_url_still_ends_every_row(self):
+        lines = render_table(
+            [missing("Castaway", "2025-12-12", traits=("remix",))], width=140,
+            grouped=False,
+        )
+        assert lines[1].rstrip().endswith("https://www.deezer.com/album/" + lines[1].split("/album/")[1].strip())
 
 
 class TestGrouping:

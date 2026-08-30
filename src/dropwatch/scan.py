@@ -353,6 +353,7 @@ class Scanner:
                 "date": str(item.release.release_date),
                 "ownership": item.ownership.value,
                 "url": item.release.link,
+                "notes": ", ".join(item.traits),
             }
             for item in result.missing
         ]

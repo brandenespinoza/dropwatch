@@ -190,7 +190,9 @@ def _label(entry: dict) -> str:
 def _show(entry: dict, position: int, total: int) -> None:
     print(f"\n─── {position}/{total} ───")
     print(_label(entry))
-    details = ", ".join(p for p in (entry.get("type"), entry.get("date")) if p)
+    details = ", ".join(
+        p for p in (entry.get("type"), entry.get("date"), entry.get("notes")) if p
+    )
     if details:
         print(f"  {details}")
     # "probably missing" is worth surfacing here: it is the matcher saying it

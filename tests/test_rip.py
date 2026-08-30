@@ -342,6 +342,32 @@ class TestWalk:
         run_rip(queued, rip_config)
         assert runner.calls == []
 
+    def test_notes_are_shown_with_the_release(self, store, rip_config, runner, monkeypatch, capsys):
+        # The walk is where a release is accepted or rejected, so "remix" has
+        # to be on screen there too, not only in the scan table.
+        store.save_missing(
+            [
+                {
+                    "id": "863456162",
+                    "artist": "The Elovaters",
+                    "title": "Castaway",
+                    "type": "Single",
+                    "date": "2025-12-12",
+                    "ownership": Ownership.PROBABLY_MISSING.value,
+                    "url": "https://www.deezer.com/album/863456162",
+                    "notes": "remix",
+                }
+            ]
+        )
+        drive(monkeypatch, ["q"])
+        run_rip(store, rip_config)
+        assert "Single, 2025-12-12, remix" in capsys.readouterr().out
+
+    def test_an_entry_without_notes_is_unchanged(self, queued, rip_config, runner, monkeypatch, capsys):
+        drive(monkeypatch, ["q"])
+        run_rip(queued, rip_config)
+        assert "Album, 2024-06-02" in capsys.readouterr().out
+
     def test_garbage_reprompts(self, queued, rip_config, runner, monkeypatch, capsys):
         drive(monkeypatch, ["yes please", "r", "q"])
         run_rip(queued, rip_config)

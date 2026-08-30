@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .models import DeezerRelease, ReleaseType
-from .normalize import parse_title
+from .normalize import parse_title, track_key
 
 # Structural boundaries, in tracks and seconds.
 ALBUM_MIN_TRACKS = 7
@@ -71,10 +71,34 @@ def local_release_type(song_count: int, duration: int | None) -> ReleaseType | N
     return _structural_type(song_count or None, duration)
 
 
+def shared_track_versions(release: DeezerRelease) -> set[str]:
+    """Version markers that every track on the release carries.
+
+    Deezer routinely leaves the marker off the release title and puts it only
+    on the tracks: the single titled plainly "Castaway" whose sole track is
+    "Castaway (Sunset Tsunami & MO2 Remix)" printed as a bare duplicate of a
+    song the user already owned, with nothing on the line to explain itself.
+
+    Every track, not any track: a release is a remix release when all of it is
+    remixes, while one remix among twelve album tracks says nothing about the
+    album. Venue and year detail is already collapsed by `track_key`, so a live
+    record whose tracks each name a different city still reads as one "live".
+    """
+    if not release.tracks:
+        return set()
+    shared: set[str] | None = None
+    for track in release.tracks:
+        _, versions = track_key(track.title_short or track.title, track.title_version)
+        shared = set(versions) if shared is None else shared & versions
+        if not shared:
+            return set()
+    return shared or set()
+
+
 def classify_release(release: DeezerRelease) -> Classification:
     """Decide the primary type and collect secondary characteristics."""
     parsed = parse_title(release.title)
-    traits = set(parsed.traits)
+    traits = set(parsed.traits) | shared_track_versions(release)
 
     declared_raw = (release.record_type or "").strip().lower()
     declared = _RECORD_TYPE_MAP.get(declared_raw)

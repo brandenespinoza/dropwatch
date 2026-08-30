@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from conftest import deezer_release
 
-from dropwatch.classify import classify_release, resolve_type
+from dropwatch.classify import classify_release, resolve_type, shared_track_versions
 from dropwatch.dedupe import deduplicate
 from dropwatch.models import ReleaseType
 
@@ -55,6 +55,46 @@ class TestClassification:
         agree = classify_release(sized("album", 10))
         corrected = classify_release(sized("single", 12))
         assert agree.confidence > corrected.confidence
+
+
+class TestSharedTrackVersions:
+    """Deezer often puts the version marker on the tracks, not the title."""
+
+    def test_a_remix_single_with_a_bare_title(self):
+        # The case that started this: the release is titled plainly "Castaway".
+        release = deezer_release(
+            "Castaway", record_type="single",
+            tracks=[("Castaway", 271)], versions=["(Sunset Tsunami & MO2 Remix)"],
+        )
+        assert shared_track_versions(release) == {"remix"}
+        assert "remix" in classify_release(release).traits
+
+    def test_venue_detail_collapses_to_one_marker(self):
+        release = deezer_release(
+            "From The Road", tracks=[("A", 300), ("B", 280), ("C", 290), ("D", 310)],
+            versions=[
+                "(Live at Fenway Park, Boston, MA)",
+                "(Live at Wrigley Field, Chicago, IL)",
+                "(Live)",
+                "(Live at The SSE Arena, Wembley)",
+            ],
+        )
+        assert shared_track_versions(release) == {"live"}
+
+    def test_one_remix_among_album_tracks_says_nothing_about_the_album(self):
+        release = deezer_release(
+            "An Album", tracks=[("A", 200), ("B", 200), ("C", 200), ("D", 200)],
+            versions=["", "", "(Remix)", ""],
+        )
+        assert shared_track_versions(release) == set()
+        assert "remix" not in classify_release(release).traits
+
+    def test_a_release_without_detail_has_no_markers(self):
+        assert shared_track_versions(deezer_release("Unknown")) == set()
+
+    def test_plain_tracks_produce_nothing(self):
+        release = deezer_release("Plain", tracks=[("A", 200), ("B", 200)])
+        assert shared_track_versions(release) == set()
 
 
 class TestDeduplicate:

@@ -121,13 +121,16 @@ def deezer_routes(http: FakeHttp, releases: list[dict], details: dict | None = N
     def album_tracks(url):
         album_id = url.split("/album/")[1].split("/tracks")[0]
         entry = details.get(album_id, {})
+        # `versions` parallels `tracks`, for a release whose marker Deezer puts
+        # on the tracks rather than in the title.
+        versions = entry.get("versions") or []
         return {
             "data": [
                 {
                     "id": f"{album_id}-{i}",
-                    "title": t,
+                    "title": t + (f" {versions[i]}" if i < len(versions) else ""),
                     "title_short": t,
-                    "title_version": "",
+                    "title_version": versions[i] if i < len(versions) else "",
                     "duration": d,
                     "isrc": None,
                     "disk_number": 1,
@@ -488,6 +491,43 @@ class TestCachingAcrossRuns:
 
 class TestMissingQueueIsPersisted:
     """`rip` runs in a separate process, so the results have to outlive the scan."""
+
+    def test_notes_travel_with_the_entry(self, scanner):
+        # A remix single whose release title says nothing: the marker is on
+        # the track, and `rip` has to see it as plainly as the scan table did.
+        deezer_routes(
+            scanner.dz_http,
+            [release_row(20, "Castaway", "2025-12-12", record_type="single")],
+            {
+                "20": {
+                    "title": "Castaway",
+                    "tracks": [("Castaway", 271)],
+                    "versions": ["(Sunset Tsunami & MO2 Remix)"],
+                    "date": "2025-12-12",
+                    "record_type": "single",
+                }
+            },
+        )
+        scanner.run(ScanOptions(progress=False))
+
+        saved = scanner.store.load_missing()
+        assert [e["title"] for e in saved] == ["Castaway"]
+        assert saved[0]["notes"] == "remix"
+
+    def test_an_unremarkable_release_stores_empty_notes(self, scanner):
+        deezer_routes(
+            scanner.dz_http,
+            [release_row(21, "A Moon Shaped Pool", "2016-05-08")],
+            {
+                "21": {
+                    "title": "A Moon Shaped Pool",
+                    "tracks": [(f"Track {i}", 220) for i in range(1, 8)],
+                    "date": "2016-05-08",
+                }
+            },
+        )
+        scanner.run(ScanOptions(progress=False))
+        assert scanner.store.load_missing()[0]["notes"] == ""
 
     def test_reported_releases_are_saved(self, scanner):
         deezer_routes(

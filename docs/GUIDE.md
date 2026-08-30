@@ -76,6 +76,31 @@ the fully dated releases it overlaps: `2024-06` falls under every dated June
 release, a bare `2024` under every dated 2024 release, and unknown dates last.
 Remaining ties break alphabetically, so repeated runs print identically.
 
+### The NOTES column
+
+A `NOTES` column appears when a release is something other than what its title
+suggests — `remix`, `live`, `acoustic`, `deluxe`, `remaster`, `compilation`:
+
+```text
+RELEASE DATE  ARTIST         TYPE     TITLE      NOTES  URL
+
+Singles (2)
+2025-12-12    The Elovaters  Single   Castaway   remix  https://www.deezer.com/album/863456162
+2025-06-06    The Elovaters  Single   Lil Bit           https://www.deezer.com/album/755753571
+```
+
+That first row is why the column exists. Deezer titles the *release* plainly
+`Castaway` and puts the marker only on the track it contains — "Castaway
+(Sunset Tsunami & MO2 Remix)" — so without the column it reads as a duplicate
+of a song you already own, with nothing on the line to explain itself.
+
+A marker has to be on **every** track to be listed, since one remix among twelve
+album tracks says nothing about the album, and venue detail collapses, so a live
+record whose tracks each name a different city reads as one `live` rather than
+eleven. The column is sized to its contents and is **absent entirely** when
+nothing in the results is flagged, so an unremarkable list keeps every cell for
+the title. The same notes appear beside each release in `dropwatch rip`.
+
 ---
 
 ## Answering what the scan could not decide

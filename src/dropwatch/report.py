@@ -23,6 +23,10 @@ ARTIST_GAP = 2
 URL_GAP = 2
 MIN_TITLE_WIDTH = 20
 MAX_ARTIST_WIDTH = 30
+# The notes column is sized to its content and vanishes when there is none, so
+# a library with nothing to flag keeps every cell for the title.
+MAX_NOTES_WIDTH = 22
+NOTES_GAP = 2
 # Wide enough that a piped table still fits the title and the Deezer URL
 # (https://www.deezer.com/album/1234567890) without squeezing either.
 FALLBACK_TERMINAL_WIDTH = 140
@@ -100,19 +104,42 @@ GROUP_LABELS = {
 }
 
 
-def _layout(items: list[MissingRelease], total_width: int) -> tuple[int, int, int]:
-    """Column widths for artist, title and URL, fitted to the terminal."""
+def notes(item: MissingRelease) -> str:
+    """What this release is, when the title does not say.
+
+    The traits already carried by the classification: "remix", "live",
+    "deluxe", "compilation". Deezer often leaves such a marker off the release
+    title and puts it only on the tracks, which made a remix single print as a
+    bare duplicate of a song the user owned.
+    """
+    return ", ".join(item.traits)
+
+
+def _layout(
+    items: list[MissingRelease], total_width: int
+) -> tuple[int, int, int, int]:
+    """Column widths for artist, title, notes and URL, fitted to the terminal."""
     artist_width = min(
         MAX_ARTIST_WIDTH,
         max([display_width(i.local_artist) for i in items] + [len("ARTIST")]),
     )
     url_width = max([display_width(i.release.link) for i in items] + [len("URL")])
+    widest_note = max([display_width(notes(i)) for i in items] + [0])
+    # No notes anywhere means no column, not an empty one: the header would
+    # promise information the table never carries.
+    notes_width = (
+        min(MAX_NOTES_WIDTH, max(widest_note, len("NOTES"))) if widest_note else 0
+    )
     fixed = DATE_WIDTH + artist_width + ARTIST_GAP + TYPE_WIDTH + url_width + URL_GAP
+    if notes_width:
+        fixed += notes_width + NOTES_GAP
     title_width = max(MIN_TITLE_WIDTH, total_width - fixed)
-    return artist_width, title_width, url_width
+    return artist_width, title_width, notes_width, url_width
 
 
-def _row(item: MissingRelease, artist_width: int, title_width: int) -> str:
+def _row(
+    item: MissingRelease, artist_width: int, title_width: int, notes_width: int
+) -> str:
     # The type column is kept even when grouping, so every line stays
     # self-describing when the output is piped somewhere.
     return (
@@ -120,8 +147,9 @@ def _row(item: MissingRelease, artist_width: int, title_width: int) -> str:
         + _fit(item.local_artist, artist_width + ARTIST_GAP)
         + _fit(item.release_type.value, TYPE_WIDTH)
         # Truncate to the title width but pad to the wider column, so a title
-        # that fills its column still keeps a gap before the URL.
+        # that fills its column still keeps a gap before whatever follows.
         + _pad(_truncate(item.release.title, title_width), title_width + URL_GAP)
+        + (_fit(notes(item), notes_width + NOTES_GAP) if notes_width else "")
         + item.release.link
     ).rstrip()
 
@@ -137,19 +165,23 @@ def render_table(
     if not items:
         return []
     total_width = width or terminal_width()
-    artist_width, title_width, _ = _layout(items, total_width)
+    artist_width, title_width, notes_width, _ = _layout(items, total_width)
 
     header = (
         _fit("RELEASE DATE", DATE_WIDTH)
         + _fit("ARTIST", artist_width + ARTIST_GAP)
         + _fit("TYPE", TYPE_WIDTH)
         + _fit("TITLE", title_width + URL_GAP)
+        + (_fit("NOTES", notes_width + NOTES_GAP) if notes_width else "")
         + "URL"
     )
     lines = [header]
 
+    def rows(group):
+        return [_row(i, artist_width, title_width, notes_width) for i in group]
+
     if not grouped:
-        lines.extend(_row(i, artist_width, title_width) for i in items)
+        lines.extend(rows(items))
         return lines
 
     for release_type in GROUP_ORDER:
@@ -158,7 +190,7 @@ def render_table(
             continue
         lines.append("")
         lines.append(f"{GROUP_LABELS[release_type]} ({len(group)})")
-        lines.extend(_row(i, artist_width, title_width) for i in group)
+        lines.extend(rows(group))
     return lines
 
 

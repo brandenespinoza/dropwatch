@@ -34,7 +34,7 @@ in [docs/DESIGN.md](docs/DESIGN.md); breaking one builds a different tool.
 ## Commands
 
 ```bash
-python3 -m pytest                                   # 731 tests
+python3 -m pytest                                   # 746 tests
 python3 -m pytest tests/test_rip.py -q              # one file
 python3 -m pytest tests/test_rip.py::TestBuildCommand::test_quoted_arguments_survive
 python3 -m pytest -k scope                          # by name
@@ -121,6 +121,15 @@ replays that list; `--limit` is never replayed. Do not move a scope fact onto
 the stored entries — a stamp cannot be corrected by a run that no longer visits
 that artist, which is how ex-favourites once leaked into the walk. Read
 DESIGN.md's *Downloading* section before changing any of it.
+
+**Traits are the release's own description, and the report's NOTES column.**
+`classify.py::shared_track_versions` promotes a version marker into the traits
+only when *every* track carries it — Deezer routinely leaves the marker off the
+release title and puts it on the tracks, which printed a remix single as a bare
+duplicate of a song the user owned. `report.py` sizes the column to its content
+and omits it entirely when nothing is flagged, so the title keeps the cells.
+Traits are stored on the queue entry as `notes`, because `rip` is where a
+release is actually accepted and needs the same warning the table gave.
 
 **stdout is the answer, stderr is the process.** Results and summary to stdout;
 progress, warnings, logging, the review section and unresolved artists to stderr.
